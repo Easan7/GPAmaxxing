@@ -14,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from app.schemas.state import CoachRunState
 from app.services.clarification import check_needs_clarification
 from app.services.optimizer import optimize_time_allocation
+from app.services.session_service import create_study_session
 from app.services.state_builder import build_state
 
 GraphState = dict[str, Any]
@@ -53,11 +54,14 @@ def node_route_intent(state: GraphState) -> GraphState:
 
 def node_uncertainty_gate(state: GraphState) -> GraphState:
     coach_state = CoachRunState.model_validate(state)
-    needs, question = check_needs_clarification(
+    needs, question, merged_constraints = check_needs_clarification(
         message=coach_state.message,
         constraints=coach_state.constraints,
         topic_state=coach_state.topic_state,
+        clarification_question=coach_state.clarification_question,
+        clarification_answer=coach_state.clarification_answer,
     )
+    state["constraints"] = merged_constraints
     state["needs_clarification"] = needs
     state["clarification_question"] = question
     _append_trace(state, "uncertainty_gate", {"needs_clarification": needs})
@@ -131,6 +135,33 @@ def node_evaluator(state: GraphState) -> GraphState:
     return state
 
 
+def node_execute_plan_action(state: GraphState) -> GraphState:
+    """Create a study session for approved plan runs.
+
+    Safeguard: only execute when a time budget exists and allocation is non-empty.
+    """
+    constraints = state.get("constraints") or {}
+    allocation = state.get("allocation") or []
+    diagnosis = state.get("diagnosis") or {}
+
+    if diagnosis.get("evaluation") != "approved":
+        _append_trace(state, "execute_plan_action", {"executed": False, "reason": "not_approved"})
+        return state
+
+    if "time_budget_min" not in constraints or not allocation:
+        _append_trace(state, "execute_plan_action", {"executed": False, "reason": "missing_guardrails"})
+        return state
+
+    result = create_study_session(
+        student_id=str(state.get("student_id", "")),
+        plan=state.get("plan") or {},
+        run_id=str(state.get("run_id", "")),
+    )
+    state["action_result"] = result
+    _append_trace(state, "execute_plan_action", {"executed": True, "session_id": result.get("session_id")})
+    return state
+
+
 def node_finalize(state: GraphState) -> GraphState:
     _append_trace(state, "finalize")
     return state
@@ -157,6 +188,7 @@ def get_coach_graph():
     workflow.add_node("optimizer", node_optimizer)
     workflow.add_node("planner", node_planner)
     workflow.add_node("evaluator", node_evaluator)
+    workflow.add_node("execute_plan_action", node_execute_plan_action)
     workflow.add_node("finalize", node_finalize)
 
     workflow.add_edge(START, "build_state")
@@ -176,7 +208,8 @@ def get_coach_graph():
     workflow.add_edge("diagnosis", "finalize")
     workflow.add_edge("optimizer", "planner")
     workflow.add_edge("planner", "evaluator")
-    workflow.add_edge("evaluator", "finalize")
+    workflow.add_edge("evaluator", "execute_plan_action")
+    workflow.add_edge("execute_plan_action", "finalize")
     workflow.add_edge("finalize", END)
 
     return workflow.compile()

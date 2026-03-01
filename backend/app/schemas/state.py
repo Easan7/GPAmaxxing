@@ -41,6 +41,7 @@ class CoachRunState(BaseModel):
     diagnosis: dict | None = None
     allocation: list[dict] = Field(default_factory=list)
     plan: dict | None = None
+    action_result: dict | None = None
     tool_trace: list[dict] = Field(default_factory=list)
 
 
@@ -62,4 +63,5 @@ class CoachResponseComplete(BaseModel):
     plan: dict | None
     evidence: dict
     actions: list[dict]
+    actions_executed: dict | None = None
     explain_mode: list[dict]
