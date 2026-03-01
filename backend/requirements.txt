@@ -25,13 +25,13 @@ numpy
 openai
 
 # ---------------------------------------------------------------------------
-# Azure Blob Storage
-# azure-storage-blob -> Upload/download assets, content files, generated artifacts
+# Azure Core 
+# azure-core -> Core shared library for Azure SDK client libraries
 # ---------------------------------------------------------------------------
-azure-storage-blob
+azure-core
 
 # ---------------------------------------------------------------------------
-# Azure AI Search (RAG)
+# Azure AI Search (RAG) ===> Required!
 # azure-search-documents -> Query and manage Azure AI Search indexes/documents
 # ---------------------------------------------------------------------------
 azure-search-documents
