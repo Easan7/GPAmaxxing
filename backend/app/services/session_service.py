@@ -8,7 +8,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.config import get_settings
-from app.storage.supabase_client import create_supabase_client
+from app.storage.supabase_client import create_supabase_client, resolve_supabase_credentials
 
 
 def _extract_goal(plan: dict) -> str:
@@ -25,7 +25,8 @@ def create_study_session(student_id: str, plan: dict, run_id: str) -> dict:
     items_created = len(checklist)
 
     settings = get_settings()
-    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+    url, key = resolve_supabase_credentials(settings)
+    if not url or not key:
         return {
             "session_id": session_id,
             "items_created": items_created,
