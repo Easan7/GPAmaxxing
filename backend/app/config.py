@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     AZURE_BLOB_CONTAINER: str | None = None
 
     SUPABASE_URL: str | None = None
+    SUPABASE_ANON_KEY: str | None = None
+    SUPABASE_SERVICE_ROLE_KEY: str | None = None
     SUPABASE_KEY: str | None = None
 
 
