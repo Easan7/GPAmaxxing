@@ -1,29 +1,35 @@
 """Application configuration loaded from environment variables."""
 
-from __future__ import annotations
+from functools import lru_cache
 
-import os
-from dataclasses import dataclass
-
-
-@dataclass(slots=True)
-class Settings:
-    """Centralized settings object for dependency injection and app setup."""
-
-    app_name: str = os.getenv("APP_NAME", "Adaptive Learning Backend")
-    app_env: str = os.getenv("APP_ENV", "development")
-    app_debug: bool = os.getenv("APP_DEBUG", "true").lower() == "true"
-    app_host: str = os.getenv("APP_HOST", "0.0.0.0")
-    app_port: int = int(os.getenv("APP_PORT", "8000"))
-    cors_origins_raw: str = os.getenv("CORS_ORIGINS", "*")
-
-    @property
-    def cors_origins(self) -> list[str]:
-        """Return CORS origins as a normalized list."""
-        raw = self.cors_origins_raw.strip()
-        if raw == "*":
-            return ["*"]
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-settings = Settings()
+class Settings(BaseSettings):
+    """Typed application settings loaded from environment and optional .env file."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    APP_ENV: str = "dev"
+    ALLOWED_ORIGINS: str = "*"
+
+    AZURE_OPENAI_API_KEY: str | None = None
+    AZURE_OPENAI_ENDPOINT: str | None = None
+    AZURE_OPENAI_API_VERSION: str = "2024-02-01"
+    AZURE_OPENAI_DEPLOYMENT: str | None = None
+
+    AZURE_SEARCH_ENDPOINT: str | None = None
+    AZURE_SEARCH_KEY: str | None = None
+    AZURE_SEARCH_INDEX: str | None = None
+
+    AZURE_STORAGE_CONNECTION_STRING: str | None = None
+    AZURE_BLOB_CONTAINER: str | None = None
+
+    SUPABASE_URL: str | None = None
+    SUPABASE_KEY: str | None = None
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return cached settings instance."""
+    return Settings()

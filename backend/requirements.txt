@@ -3,11 +3,13 @@
 # fastapi            -> ASGI web framework for routes + dependency injection
 # uvicorn[standard]  -> Development/production ASGI server
 # pydantic           -> Data validation for schemas and settings models
+# pydantic-settings  -> Environment-backed settings management
 # python-dotenv      -> Load environment variables from a local .env file
 # ---------------------------------------------------------------------------
 fastapi
 uvicorn[standard]
 pydantic
+pydantic-settings
 python-dotenv
 
 # ---------------------------------------------------------------------------
