@@ -63,7 +63,6 @@ class AISearchClient:
             raise
     
     def retrieve(self, query: str, top_k: int = 5):
-        """Retrieve lecturer notes explaining student errors."""
         try:
             if not query or len(query.strip()) == 0:
                 raise ValueError("Query cannot be empty")
