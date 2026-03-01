@@ -10,10 +10,11 @@ class SupabaseClient:
     url: str
     key: str
 
+# Not in use -- keep after MVP? 
+#   -- currently majority of logic in blob_client.py
+# @dataclass(slots=True)
+# class BlobStorageClient:
+#     """Placeholder Azure Blob client wrapper."""
 
-@dataclass(slots=True)
-class BlobStorageClient:
-    """Placeholder Azure Blob client wrapper."""
-
-    account_url: str
-    container_name: str
+#     account_url: str
+    # container_name: str
