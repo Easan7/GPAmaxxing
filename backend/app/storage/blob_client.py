@@ -8,7 +8,6 @@ from azure.core.exceptions import AzureError
 
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
