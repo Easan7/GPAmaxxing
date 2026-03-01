@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Core API Framework
+# fastapi            -> ASGI web framework for routes + dependency injection
+# uvicorn[standard]  -> Development/production ASGI server
+# pydantic           -> Data validation for schemas and settings models
+# python-dotenv      -> Load environment variables from a local .env file
+# ---------------------------------------------------------------------------
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+
+# ---------------------------------------------------------------------------
+# Deterministic model utilities
+# numpy              -> Numerical helpers for scoring/ranking logic
+# ---------------------------------------------------------------------------
+numpy
+
+# ---------------------------------------------------------------------------
+# Azure OpenAI
+# openai             -> Official SDK used with Azure OpenAI endpoint + deployments
+# ---------------------------------------------------------------------------
+openai
+
+# ---------------------------------------------------------------------------
+# Azure Blob Storage
+# azure-storage-blob -> Upload/download assets, content files, generated artifacts
+# ---------------------------------------------------------------------------
+azure-storage-blob
+
+# ---------------------------------------------------------------------------
+# Azure AI Search (RAG)
+# azure-search-documents -> Query and manage Azure AI Search indexes/documents
+# ---------------------------------------------------------------------------
+azure-search-documents
+
+# ---------------------------------------------------------------------------
+# Supabase + Postgres
+# supabase           -> Supabase client for auth/table operations
+# psycopg2-binary    -> Postgres driver for direct SQL/advanced DB access
+# ---------------------------------------------------------------------------
+supabase
+psycopg2-binary
+
+# ---------------------------------------------------------------------------
+# Agent Orchestration / LLM Framework
+# langchain          -> LLM chains, prompts, tool interfaces
+# langgraph          -> Stateful graph orchestration for agents/workflows
+# langchain-openai   -> LangChain provider integration for OpenAI/Azure OpenAI
+# ---------------------------------------------------------------------------
+langchain
+langgraph
+langchain-openai
