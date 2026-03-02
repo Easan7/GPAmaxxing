@@ -110,7 +110,7 @@ export default function ChatPage() {
         : {
             student_id: ASSUMED_STUDENT_ID,
             message: text,
-            window_days: 30,
+            window_days: 180,
             constraints: {},
           };
 
