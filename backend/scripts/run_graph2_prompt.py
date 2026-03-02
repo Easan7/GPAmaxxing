@@ -138,7 +138,12 @@ def _ensure_completed_state(
     if not bool(final_state.get("needs_clarification")):
         return final_state
 
-    if str(final_state.get("intent") or "") != "PLAN":
+    intents = final_state.get("intents") or []
+    normalized_intents = {str(item).upper().strip() for item in intents if str(item).strip()}
+    primary_intent = str(final_state.get("intent") or "").upper().strip()
+    plan_requested = primary_intent == "PLAN" or "PLAN" in normalized_intents
+
+    if not plan_requested:
         return final_state
 
     graph = get_coach_graph2()
@@ -193,6 +198,7 @@ def main() -> None:
 
     output = {
         "intent": final_state.get("intent"),
+        "intents": final_state.get("intents"),
         "intent_confidence": final_state.get("intent_confidence"),
         "intent_source": final_state.get("intent_source"),
         "needs_clarification": final_state.get("needs_clarification"),

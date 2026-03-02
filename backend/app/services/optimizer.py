@@ -11,9 +11,51 @@ def _compute_topic_bounds(topic_count: int, time_budget_min: int) -> tuple[int, 
     if topic_count <= 0:
         return 0, 0
 
-    min_per_topic = 8 if time_budget_min >= 40 else 5
-    max_per_topic = max(min_per_topic + 2, int(round(time_budget_min * 0.5)))
+    # Product requirement: allocate at least 30 minutes per selected topic,
+    # except when the entire budget itself is below 30 minutes.
+    min_per_topic = 30 if time_budget_min >= 30 else max(1, time_budget_min)
+    max_per_topic = max(min_per_topic + 10, int(round(time_budget_min * 0.55)))
     return min_per_topic, max_per_topic
+
+
+def _apply_horizon_topic_cap(
+    max_per_topic: int,
+    min_per_topic: int,
+    time_budget_min: int,
+    constraints: dict | None,
+) -> int:
+    """Cap per-topic allocation for long-horizon plans.
+
+    This avoids one topic dominating a multi-day schedule while preserving
+    flexibility for short single-session plans.
+    """
+    if not constraints:
+        return max_per_topic
+
+    horizon_days_raw = constraints.get("time_horizon_days")
+    if not isinstance(horizon_days_raw, int) or horizon_days_raw <= 1:
+        return max_per_topic
+
+    horizon_days = max(1, int(horizon_days_raw))
+
+    daily_cap_raw = constraints.get("max_topic_minutes_per_day")
+    if isinstance(daily_cap_raw, int) and daily_cap_raw > 0:
+        daily_cap_min = int(daily_cap_raw)
+    else:
+        daily_cap_min = 90
+
+    horizon_cap = daily_cap_min * horizon_days
+
+    max_share_raw = constraints.get("max_topic_share")
+    if isinstance(max_share_raw, (int, float)):
+        max_share = float(max_share_raw)
+    else:
+        max_share = 0.22
+    max_share = min(1.0, max(0.1, max_share))
+    share_cap = int(round(time_budget_min * max_share))
+
+    capped = min(max_per_topic, horizon_cap, share_cap)
+    return max(min_per_topic, capped)
 
 
 def optimize_time_allocation(topic_state: list[TopicStateItem], constraints: dict | None) -> list[dict]:
@@ -29,6 +71,12 @@ def optimize_time_allocation(topic_state: list[TopicStateItem], constraints: dic
         return []
 
     min_per_topic, max_per_topic = _compute_topic_bounds(len(topic_state), time_budget_min)
+    max_per_topic = _apply_horizon_topic_cap(
+        max_per_topic=max_per_topic,
+        min_per_topic=min_per_topic,
+        time_budget_min=time_budget_min,
+        constraints=constraints,
+    )
 
     # If budget is too small to satisfy minimums for all topics, focus top-priority topics first.
     topic_candidates = list(topic_state)
