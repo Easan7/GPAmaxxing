@@ -2,229 +2,73 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
-from app.models.analytics.decay import compute_decay_risk
-from app.models.analytics.error_inference import infer_topic_error_probs
-from app.models.analytics.mastery_elo import compute_topic_mastery_elo
-from app.models.analytics.patterns import detect_topic_patterns
-from app.models.analytics.trend import compute_topic_trends
+from app.models.analytics.student_state import build_student_state
 from app.schemas.state import ErrorStateItem, TopicStateItem
 
 
-def _mock_attempts(student_id: str) -> list[dict]:
-    """Return deterministic mock attempts for offline analytics execution.
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
-    TODO: Replace mocked attempt list with Supabase query.
-    """
-    base = datetime(2026, 2, 1, 8, 0, 0)
-    raw_attempts = [
-        {
-            "student_id": student_id,
-            "topic": "Algebra",
-            "difficulty": "medium",
-            "correct": True,
-            "time_taken": 82,
-            "ts": base + timedelta(days=1),
-            "tag": "calculation",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Algebra",
-            "difficulty": "hard",
-            "correct": False,
-            "time_taken": 74,
-            "ts": base + timedelta(days=3),
-            "tag": "calculation",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Algebra",
-            "difficulty": "medium",
-            "correct": True,
-            "time_taken": 88,
-            "ts": base + timedelta(days=6),
-            "tag": "calculation",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Algebra",
-            "difficulty": "hard",
-            "correct": True,
-            "time_taken": 91,
-            "ts": base + timedelta(days=9),
-            "tag": "signs",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Algebra",
-            "difficulty": "easy",
-            "correct": True,
-            "time_taken": 58,
-            "ts": base + timedelta(days=12),
-            "tag": "calculation",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Geometry",
-            "difficulty": "medium",
-            "correct": False,
-            "time_taken": 61,
-            "ts": base + timedelta(days=2),
-            "tag": "units",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Geometry",
-            "difficulty": "hard",
-            "correct": False,
-            "time_taken": 66,
-            "ts": base + timedelta(days=5),
-            "tag": "units",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Geometry",
-            "difficulty": "medium",
-            "correct": True,
-            "time_taken": 79,
-            "ts": base + timedelta(days=8),
-            "tag": "visualization",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Geometry",
-            "difficulty": "hard",
-            "correct": False,
-            "time_taken": 64,
-            "ts": base + timedelta(days=11),
-            "tag": "units",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Geometry",
-            "difficulty": "easy",
-            "correct": True,
-            "time_taken": 57,
-            "ts": base + timedelta(days=14),
-            "tag": "units",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Word Problems",
-            "difficulty": "medium",
-            "correct": False,
-            "time_taken": 68,
-            "ts": base + timedelta(days=4),
-            "tag": "worded",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Word Problems",
-            "difficulty": "hard",
-            "correct": False,
-            "time_taken": 70,
-            "ts": base + timedelta(days=7),
-            "tag": "worded",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Word Problems",
-            "difficulty": "medium",
-            "correct": True,
-            "time_taken": 86,
-            "ts": base + timedelta(days=10),
-            "tag": "translation",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Word Problems",
-            "difficulty": "hard",
-            "correct": False,
-            "time_taken": 72,
-            "ts": base + timedelta(days=13),
-            "tag": "worded",
-        },
-        {
-            "student_id": student_id,
-            "topic": "Word Problems",
-            "difficulty": "easy",
-            "correct": True,
-            "time_taken": 62,
-            "ts": base + timedelta(days=15),
-            "tag": "worded",
-        },
-    ]
 
-    normalized: list[dict] = []
-    for attempt in raw_attempts:
-        mapped = dict(attempt)
-        mapped["attempted_at"] = mapped.pop("ts")
-        mapped["time_taken_sec"] = mapped.pop("time_taken", None)
-        tag = mapped.pop("tag", None)
-        mapped["tags"] = [tag] if tag else []
-        mapped.setdefault("mode", "timed")
-        mapped.setdefault("confidence", 0.6)
-        normalized.append(mapped)
+def _normalize_error_probs(error_distribution: dict) -> tuple[float, float, float]:
+    total_wrong = int(error_distribution.get("total_wrong", 0) or 0)
+    if total_wrong <= 0:
+        return (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
 
-    return normalized
+    conceptual = _safe_float(error_distribution.get("conceptual", 0.0)) / total_wrong
+    careless = _safe_float(error_distribution.get("careless", 0.0)) / total_wrong
+    time_pressure = _safe_float(error_distribution.get("time_pressure", 0.0)) / total_wrong
+    return conceptual, careless, time_pressure
 
 
 def build_state(student_id: str, window_days: int) -> tuple[list[TopicStateItem], list[ErrorStateItem]]:
-    """Build deterministic topic and error state from mocked attempts."""
-    now_ts = datetime(2026, 3, 1, 12, 0, 0)
-    all_attempts = _mock_attempts(student_id=student_id)
-    cutoff_ts = now_ts - timedelta(days=window_days)
-    attempts = [attempt for attempt in all_attempts if attempt["attempted_at"] >= cutoff_ts]
-
-    if not attempts:
-        attempts = all_attempts
-
-    mastery_rows = compute_topic_mastery_elo(attempts)
-    mastery_by_topic = {
-        topic: float(values.get("mastery", 0.5))
-        for topic, values in mastery_rows.items()
-    }
-    error_probs = infer_topic_error_probs(attempts, mastery_rows)
-    patterns = detect_topic_patterns(attempts)
-    trend_by_topic = compute_topic_trends(attempts)
-
-    attempts_by_topic: dict[str, list[dict]] = {}
-    for attempt in attempts:
-        attempts_by_topic.setdefault(attempt["topic"], []).append(attempt)
+    """Build topic and error state from live Supabase-backed analytics."""
+    state = build_student_state(student_id=student_id, since_days=window_days)
+    topics_payload: dict[str, dict] = state.get("topics", {})
 
     topic_state: list[TopicStateItem] = []
-    for topic, topic_attempts in sorted(attempts_by_topic.items()):
-        topic_attempts_sorted = sorted(topic_attempts, key=lambda attempt: attempt["attempted_at"])
-        last_attempt_ts = topic_attempts_sorted[-1]["attempted_at"]
-        trend_slope = float(trend_by_topic.get(topic, 0.0))
-        decay_risk = compute_decay_risk(last_attempt_ts=last_attempt_ts, now_ts=now_ts)
+    error_state: list[ErrorStateItem] = []
 
-        attempt_count = len(topic_attempts_sorted)
-        attempts_normalized = min(attempt_count, 10) / 10.0
+    for topic, payload in sorted(topics_payload.items()):
+        trend_block = payload.get("trend") or {}
+        decay_block = payload.get("decay") or {}
+        stats_block = payload.get("stats") or {}
+        patterns_block = payload.get("patterns") or {}
+        error_distribution = payload.get("error_distribution") or {}
+
+        trend_slope = _safe_float(trend_block.get("slope", 0.0))
+        decay_risk = _safe_float(decay_block.get("decay_risk", 0.0))
+        mastery = _safe_float(payload.get("mastery", 0.5), 0.5)
+
+        attempts = max(0, int(stats_block.get("n_attempts", 0) or 0))
+        attempts_normalized = min(attempts, 12) / 12.0
+        volatility = _safe_float(trend_block.get("volatility", 0.0))
+        pattern_alerts = patterns_block.get("alerts") or []
         uncertainty = 1.0 - attempts_normalized
-
-        if topic in patterns:
+        uncertainty = min(1.0, uncertainty + min(0.2, volatility * 5.0))
+        if pattern_alerts:
             uncertainty = min(1.0, uncertainty + 0.05)
 
         topic_state.append(
             TopicStateItem(
                 topic=topic,
-                mastery=round(mastery_by_topic.get(topic, 0.5), 4),
+                mastery=round(mastery, 4),
                 trend=round(trend_slope, 4),
                 decay_risk=round(decay_risk, 4),
                 uncertainty=round(uncertainty, 4),
             )
         )
 
-    error_state: list[ErrorStateItem] = []
-    for topic, probs in sorted(error_probs.items()):
+        conceptual, careless, time_pressure = _normalize_error_probs(error_distribution)
         error_state.append(
             ErrorStateItem(
                 topic=topic,
-                conceptual=round(float(probs.get("conceptual", 1 / 3)), 4),
-                careless=round(float(probs.get("careless", 1 / 3)), 4),
-                time_pressure=round(float(probs.get("time_pressure", 1 / 3)), 4),
+                conceptual=round(conceptual, 4),
+                careless=round(careless, 4),
+                time_pressure=round(time_pressure, 4),
             )
         )
 

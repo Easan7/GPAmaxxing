@@ -88,12 +88,14 @@ def annotate_attempts_with_error_type(
         is_fast = time_taken_sec is not None and float(time_taken_sec) <= topic_threshold
         error_type = "unknown"
 
-        if mastery < 0.55 and confidence <= 0.65:
+        if mastery < 0.55 and confidence <= 0.50:
             error_type = "conceptual"
         elif mastery >= 0.62 and confidence >= 0.65 and is_fast:
             error_type = "careless"
         elif mode == "timed" and confidence <= 0.6 and is_fast:
             error_type = "time_pressure"
+        elif mastery >= 0.50 and confidence >= 0.55 and mode == "timed":
+            error_type = "careless"
         elif mastery < 0.60:
             error_type = "conceptual"
         elif mode == "timed" and is_fast:
