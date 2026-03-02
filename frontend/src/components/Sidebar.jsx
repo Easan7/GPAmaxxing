@@ -2,8 +2,8 @@ import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Bot } from "lucide-react";
 
 const navItems = [
-    { label: "Analytics", icon: LayoutDashboard, path: "/" },
-    { label: "AI Agent", icon: Bot, path: "/chat" },
+  { label: "AI Agent", icon: Bot, path: "/chat" },
+  { label: "Analytics", icon: LayoutDashboard, path: "/analytics" },
 ];
 
 export default function Sidebar({ collapsed }) {

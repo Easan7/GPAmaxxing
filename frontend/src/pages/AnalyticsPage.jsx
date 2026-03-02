@@ -4,6 +4,8 @@ import MovingAverageChart from "../components/MovingAverageChart";
 import TopicsNeedingAttention from "../components/TopicsNeedingAttention.jsx";
 import MiniStatCard from "../components/MiniStatCard";
 
+const DEMO_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
+
 export default function AnalyticsPage() {
     return (
         // Main container: 3 columns total on large screens
@@ -66,7 +68,7 @@ export default function AnalyticsPage() {
                 />
 
                 {/* Middle Tall Chart */}
-                <MovingAverageChart />
+                <MovingAverageChart studentId={DEMO_STUDENT_ID} />
 
                 {/* Bottom Small Card */}
                 <MiniStatCard 
