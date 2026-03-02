@@ -1,5 +1,5 @@
 """
-Gapamaxxing RAG Retriever
+Gpamaxxing RAG Retriever
 LangChain interface → AISearchClient (lecturer notes)
 """
 
@@ -20,7 +20,7 @@ except ModuleNotFoundError:
 
 
 class GapamaxxingRetriever(BaseRetriever):
-    """Azure AI Search retriever for Gap Coach - lecturer notes."""
+    """Azure AI Search retriever for Gpa Coach - lecturer notes."""
     client: AISearchClient
     top_k: int = 5
     
