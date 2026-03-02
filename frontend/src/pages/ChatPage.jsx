@@ -3,26 +3,7 @@ import { Send } from "lucide-react";
 import ChatStudio from "../components/ChatStudio";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-function safeGetStorageValue(key, fallback = "") {
-    try {
-        return localStorage.getItem(key) || fallback;
-    } catch {
-        return fallback;
-    }
-}
-
-function safeSetStorageValue(key, value) {
-    try {
-        localStorage.setItem(key, value);
-    } catch {
-        return;
-    }
-}
-
-const DEFAULT_STUDENT_ID =
-    import.meta.env.VITE_DEFAULT_STUDENT_ID ||
-    safeGetStorageValue("gpa_student_id") ||
-    "";
+const ASSUMED_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
 
 const CLARIFICATION_FIELD_ORDER = [
     "time_budget_min",
@@ -147,7 +128,6 @@ function apiUrl(path) {
 }
 
 export default function ChatPage() {
-    const [studentId, setStudentId] = useState(DEFAULT_STUDENT_ID);
     const [planMode, setPlanMode] = useState(false);
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState([
@@ -164,20 +144,12 @@ export default function ChatPage() {
     const [error, setError] = useState("");
 
     const canSend = useMemo(
-        () => !loading && !pendingRunId && input.trim().length > 0 && studentId.trim().length > 0,
-        [loading, pendingRunId, input, studentId],
+        () => !loading && !pendingRunId && input.trim().length > 0,
+        [loading, pendingRunId, input],
     );
 
     const pushMessage = (role, text) => {
         setMessages((prev) => [...prev, { id: crypto.randomUUID(), role, text }]);
-    };
-
-    const saveStudentId = (value) => {
-        const trimmed = value.trim();
-        setStudentId(trimmed);
-        if (trimmed) {
-            safeSetStorageValue("gpa_student_id", trimmed);
-        }
     };
 
     async function postJson(path, body) {
@@ -221,7 +193,7 @@ export default function ChatPage() {
 
         try {
             const queryResult = await postJson("/api/coach/query", {
-                student_id: studentId.trim(),
+                student_id: ASSUMED_STUDENT_ID,
                 message: text,
                 window_days: 30,
                 constraints: {
@@ -308,13 +280,6 @@ export default function ChatPage() {
                                 />
                                 Study Plan Mode
                             </label>
-                            <input
-                                type="text"
-                                value={studentId}
-                                onChange={(event) => saveStudentId(event.target.value)}
-                                placeholder="Student ID"
-                                className="w-[280px] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 outline-none focus:ring-2 focus:ring-[#FF517F]/20"
-                            />
                         </div>
                     </div>
                 </div>
