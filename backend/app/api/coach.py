@@ -1,10 +1,10 @@
 """Coach endpoints."""
 
 import importlib
-from typing import Union
+from typing import Any, Union
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
 from app.agents.graph2 import get_coach_graph2
 from app.schemas.coach import CoachQueryRequest
@@ -17,11 +17,14 @@ router = APIRouter(prefix="/api/coach", tags=["coach"])
 
 
 def _to_complete_response(final_state: CoachRunState) -> CoachResponseComplete:
-    actions = (
-        [{"type": "start_practice", "label": "Start focused practice session"}]
-        if final_state.intent == "PLAN"
-        else [{"type": "generate_plan", "label": "Generate a targeted study plan"}]
-    )
+    if final_state.artifact_type == "mode_notice":
+        actions = [{"type": "enable_plan_mode", "label": "Turn on Study Plan Mode"}]
+    else:
+        actions = (
+            [{"type": "start_practice", "label": "Start focused practice session"}]
+            if final_state.intent == "PLAN"
+            else [{"type": "generate_plan", "label": "Generate a targeted study plan"}]
+        )
 
     actions_executed = None
     if final_state.action_result:
@@ -79,14 +82,15 @@ def coach_query(payload: CoachQueryRequest) -> Union[CoachResponseNeedsInput, Co
 
 
 @router.post("/continue")
-def coach_continue(payload: CoachContinueRequest) -> CoachResponseComplete:
+def coach_continue(payload: dict = Body(...)) -> Union[CoachResponseNeedsInput, CoachResponseComplete]:
+    payload_model = CoachContinueRequest.model_validate(payload)
     run_store = get_run_store()
-    stored_state = run_store.load_run(payload.run_id)
+    stored_state = run_store.load_run(payload_model.run_id)
     if not stored_state:
         raise HTTPException(status_code=404, detail="Run not found")
 
     resumed = dict(stored_state)
-    resumed["clarification_answer"] = payload.answer
+    resumed["clarification_answer"] = payload_model.answer
     resumed["needs_clarification"] = False
 
     graph = get_coach_graph2()
@@ -95,7 +99,11 @@ def coach_continue(payload: CoachContinueRequest) -> CoachResponseComplete:
 
     if final_state.needs_clarification:
         run_store.save_run(final_state.run_id, final_state.model_dump())
-        raise HTTPException(status_code=400, detail="Clarification answer incomplete")
+        return CoachResponseNeedsInput(
+            status="needs_user_input",
+            run_id=final_state.run_id,
+            question=final_state.clarification_question or {},
+        )
 
     run_store.delete_run(final_state.run_id)
     return _to_complete_response(final_state)
