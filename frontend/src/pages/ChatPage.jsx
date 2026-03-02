@@ -1,6 +1,51 @@
+<<<<<<< HEAD
 import { useMemo, useState } from "react";
 import { Send } from "lucide-react";
 import ChatStudio from "../components/ChatStudio";
+=======
+import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import ChatStudio from "../components/ChatStudio"; // <-- adjust path if needed
+
+const MOCK_STUDY_PLAN = `Based on the provided analytics, the study plan focuses on areas where your mastery is lower and where there are signs of conceptual misunderstanding. Given the metrics you've provided, here's how we can refine your plan:
+
+### Revised Study Plan
+
+Title: Focused Session Plan
+
+1. User-Centred Design (13 minutes)
+   - Current mastery: 46.72% with high uncertainty (58.52%). Focus here is essential as mastery is below the 50% threshold.
+   - Practice questions similar to: "What are the key principles of User-Centred Design?" This can help increase both your knowledge and confidence, which currently stands at a risk of decay due to your low trend.
+
+2. Interaction Design (8 minutes)
+   - Current mastery: 52.08%, but with a conceptual understanding issue noted (1.0 indicating you're facing challenges in this area).
+   - Focus on questions like: "How does interaction design influence user experience?" Dedicate time to clarify conceptual misunderstandings.
+
+3. Prototyping (8 minutes)
+   - Mastery is currently unknown due to noted conceptual errors.
+   - Practice analyzing prototyping scenarios with questions such as: "What are the advantages of low-fidelity prototyping?" This will help address your conceptual gaps.
+
+4. Ideation (8 minutes)
+   - While you performed well in your attempts (correct with 80% confidence), your mastery is at 51.83%, suggesting continuous practice will reinforce this area.
+   - Example of a question to work on: "What techniques can be used to enhance creative thinking during ideation sessions?" This will maintain your confidence while building further understanding.
+
+5. Qualitative Analysis (8 minutes)
+   - Although your mastery in this area is higher than others, regular practice will help mitigate uncertainty (12.83%).
+   - Engage with questions like: "What methods can be used to analyze qualitative data effectively?"
+
+### Key Example
+- For Ideation, you have answered previously with confidence. For instance, the question, “Why should teams defer judgment during brainstorming?”, which you answered correctly in 90 seconds with 80% confidence, demonstrates that you’re building a solid foundation. Continue to work on enhancing confidence through repeated practice and deeper exploration of concepts related to brainstorming tactics.
+
+### Summary
+This study plan is specifically designed to target your uncertainties and areas where conceptual understanding is weak. By focusing on both practice and theory, you can enhance your overall mastery while ensuring you have a confident grasp on the critical concepts in your field. Adjust timing based on your comfort level, but aim to revisit these topics repetitively to solidify your learning.`;
+
+function mockCoachReply(userText) {
+  const t = userText.toLowerCase();
+  if (t.includes("study plan") || t.includes("make a plan")) return MOCK_STUDY_PLAN;
+  return `Got it. Ask me for a **study plan** and I’ll generate one based on your analytics.`;
+}
+>>>>>>> 714b2ea (made a sample chat layout that mimics chatgpt layou)
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const ASSUMED_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
@@ -128,6 +173,7 @@ function apiUrl(path) {
 }
 
 export default function ChatPage() {
+<<<<<<< HEAD
     const [planMode, setPlanMode] = useState(false);
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState([
@@ -385,9 +431,162 @@ export default function ChatPage() {
                     </form>
                 </div>
             </div>
+=======
+  const [messages, setMessages] = useState([
+    { id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." },
+  ]);
+  const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const bottomRef = useRef(null);
 
-            {/* sidebar component */}
-            <ChatStudio />
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
+
+  const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
+>>>>>>> 714b2ea (made a sample chat layout that mimics chatgpt layou)
+
+  function handleSend() {
+    if (!canSend) return;
+
+    const text = input.trim();
+    setInput("");
+
+    const userMsg = { id: crypto.randomUUID(), role: "user", content: text };
+    setMessages((prev) => [...prev, userMsg]);
+
+    setIsTyping(true);
+
+    // Mock delay (feels real). Replace with fetch() later.
+    window.setTimeout(() => {
+      const reply = mockCoachReply(text);
+      const botMsg = { id: crypto.randomUUID(), role: "assistant", content: reply };
+      setMessages((prev) => [...prev, botMsg]);
+      setIsTyping(false);
+    }, 700);
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  return (
+    <div className="h-full w-full flex">
+      {/* Main chat column */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <div className="h-14 px-6 flex items-center border-b border-gray-100 bg-white shrink-0">
+          <div className="text-sm font-semibold text-gray-900">AI Agent</div>
         </div>
-    );
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto bg-[#fafafa]">
+          <div className="max-w-3xl mx-auto px-4 py-6 pb-28 space-y-6">
+            {messages.map((m) => (
+              <MessageRow key={m.id} role={m.role} content={m.content} />
+            ))}
+
+            {isTyping && (
+              <div className="flex gap-3">
+                <Avatar role="assistant" />
+                <div className="rounded-2xl bg-white border border-gray-100 px-4 py-3 shadow-sm">
+                  <TypingDots />
+                </div>
+              </div>
+            )}
+
+            <div ref={bottomRef} />
+          </div>
+        </div>
+
+        {/* Composer */}
+        <div className="border-t border-gray-100 bg-white shrink-0">
+          <div className="max-w-3xl mx-auto px-4 py-4">
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm flex items-end gap-2 p-3">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                rows={1}
+                placeholder="Message AI Agent..."
+                className="flex-1 resize-none outline-none text-sm leading-6 max-h-40 py-2"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                className={`h-9 px-4 rounded-xl text-sm font-semibold transition
+                  ${
+                    canSend
+                      ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                      : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  }`}
+              >
+                Send
+              </button>
+            </div>
+            <div className="text-[12px] text-gray-400 mt-2 px-1">
+              Enter to send • Shift+Enter for new line
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ✅ Keep your Studio sidebar */}
+      <ChatStudio />
+    </div>
+  );
+}
+
+function MessageRow({ role, content }) {
+  const isUser = role === "user";
+
+  return (
+    <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+      {!isUser && <Avatar role="assistant" />}
+
+      <div
+        className={
+          isUser
+            ? "max-w-[85%] rounded-2xl bg-indigo-600 text-white px-4 py-3 shadow-sm"
+            : "max-w-[85%] rounded-2xl bg-white border border-gray-100 px-4 py-3 shadow-sm"
+        }
+      >
+        {role === "assistant" ? (
+          <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-1">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
+        ) : (
+          <div className="text-sm leading-6 whitespace-pre-wrap">{content}</div>
+        )}
+      </div>
+
+      {isUser && <Avatar role="user" />}
+    </div>
+  );
+}
+
+function Avatar({ role }) {
+  const isUser = role === "user";
+  return (
+    <div
+      className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+      ${isUser ? "bg-gray-900 text-white" : "bg-gradient-to-br from-pink-500 to-orange-400 text-white"}`}
+      title={isUser ? "You" : "Coach"}
+    >
+      {isUser ? "You" : "AI"}
+    </div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce [animation-delay:-0.2s]" />
+      <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce [animation-delay:-0.1s]" />
+      <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
+    </div>
+  );
 }
