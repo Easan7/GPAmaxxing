@@ -3,9 +3,25 @@ import { Send } from "lucide-react";
 import ChatStudio from "../components/ChatStudio";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+function safeGetStorageValue(key, fallback = "") {
+    try {
+        return localStorage.getItem(key) || fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function safeSetStorageValue(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch {
+        return;
+    }
+}
+
 const DEFAULT_STUDENT_ID =
     import.meta.env.VITE_DEFAULT_STUDENT_ID ||
-    localStorage.getItem("gpa_student_id") ||
+    safeGetStorageValue("gpa_student_id") ||
     "";
 
 const CLARIFICATION_FIELD_ORDER = [
@@ -160,7 +176,7 @@ export default function ChatPage() {
         const trimmed = value.trim();
         setStudentId(trimmed);
         if (trimmed) {
-            localStorage.setItem("gpa_student_id", trimmed);
+            safeSetStorageValue("gpa_student_id", trimmed);
         }
     };
 
@@ -324,8 +340,8 @@ export default function ChatPage() {
                         <div key={message.id} className={`max-w-3xl ${message.role === "user" ? "ml-auto" : ""}`}>
                             <p
                                 className={`leading-relaxed text-sm whitespace-pre-wrap rounded-2xl px-4 py-3 ${message.role === "user"
-                                        ? "bg-indigo-50 text-indigo-900"
-                                        : "bg-gray-50 text-gray-700"
+                                    ? "bg-indigo-50 text-indigo-900"
+                                    : "bg-gray-50 text-gray-700"
                                     }`}
                             >
                                 {message.text}

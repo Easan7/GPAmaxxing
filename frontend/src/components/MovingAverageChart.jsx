@@ -10,7 +10,7 @@ import {
   Tooltip,
   Cell,
 } from "recharts";
-import { supabase } from "../lib/supabaseClient"; 
+import { hasSupabaseConfig, supabase } from "../lib/supabaseClient";
 
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -28,8 +28,8 @@ function addDaysLocal(d, n) {
 
 function getLast7DaysRangeLocal() {
   const todayStart = startOfDayLocal(new Date());
-  const start = addDaysLocal(todayStart, -6);      
-  const end = addDaysLocal(todayStart, 1);         
+  const start = addDaysLocal(todayStart, -6);
+  const end = addDaysLocal(todayStart, 1);
   return { start, end };
 }
 
@@ -42,7 +42,7 @@ function buildLast7DaysSkeleton() {
     const day = DAY_LETTERS[date.getDay()];
     return {
       day,
-      dateKey: date.toISOString().slice(0, 10), 
+      dateKey: date.toISOString().slice(0, 10),
       score: null,
       attempts: 0,
       correct: 0,
@@ -104,6 +104,13 @@ export default function MovingAverageChart({ studentId }) {
     async function load() {
       setLoading(true);
       setError("");
+
+      if (!hasSupabaseConfig || !supabase) {
+        setError("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+        setData(buildLast7DaysSkeleton());
+        setLoading(false);
+        return;
+      }
 
       const skeleton = buildLast7DaysSkeleton();
       const { start, end } = getLast7DaysRangeLocal();
@@ -194,8 +201,8 @@ export default function MovingAverageChart({ studentId }) {
                     entry.score == null
                       ? "#F9FAFB"
                       : index === highlightMaxIndex
-                      ? "#FF517F"
-                      : "#F3F4F6"
+                        ? "#FF517F"
+                        : "#F3F4F6"
                   }
                 />
               ))}
