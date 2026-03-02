@@ -13,10 +13,10 @@ class Settings(BaseSettings):
     APP_ENV: str = "dev"
     ALLOWED_ORIGINS: str = "*"
 
-    AZURE_OPENAI_API_KEY: str | None = None
-    AZURE_OPENAI_ENDPOINT: str | None = None
-    AZURE_OPENAI_API_VERSION: str = "2024-02-01"
-    AZURE_OPENAI_DEPLOYMENT: str | None = None
+    OPENAI_API_KEY: str | None = None
+    OPENAI_MODEL: str | None = None
+    OPENAI_CHAT_MODEL: str | None = None
+    OPENAI_BASE_URL: str | None = None
 
     AZURE_SEARCH_ENDPOINT: str | None = None
     AZURE_SEARCH_KEY: str | None = None

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from app.models.decay import compute_decay_risk
-from app.models.error_inference import infer_error_probs
-from app.models.mastery_elo import rating_to_mastery, update_topic_ratings
-from app.models.patterns import detect_repeat_patterns
-from app.models.trend import compute_trend
+from app.models.analytics.decay import compute_decay_risk
+from app.models.analytics.error_inference import infer_topic_error_probs
+from app.models.analytics.mastery_elo import compute_topic_mastery_elo
+from app.models.analytics.patterns import detect_topic_patterns
+from app.models.analytics.trend import compute_topic_trends
 from app.schemas.state import ErrorStateItem, TopicStateItem
 
 
@@ -18,7 +18,7 @@ def _mock_attempts(student_id: str) -> list[dict]:
     TODO: Replace mocked attempt list with Supabase query.
     """
     base = datetime(2026, 2, 1, 8, 0, 0)
-    return [
+    raw_attempts = [
         {
             "student_id": student_id,
             "topic": "Algebra",
@@ -156,18 +156,18 @@ def _mock_attempts(student_id: str) -> list[dict]:
         },
     ]
 
+    normalized: list[dict] = []
+    for attempt in raw_attempts:
+        mapped = dict(attempt)
+        mapped["attempted_at"] = mapped.pop("ts")
+        mapped["time_taken_sec"] = mapped.pop("time_taken", None)
+        tag = mapped.pop("tag", None)
+        mapped["tags"] = [tag] if tag else []
+        mapped.setdefault("mode", "timed")
+        mapped.setdefault("confidence", 0.6)
+        normalized.append(mapped)
 
-def _build_mastery_series(topic_attempts: list[dict]) -> list[tuple[datetime, float]]:
-    """Create a timestamped mastery series from rolling topic ELO updates."""
-    ordered = sorted(topic_attempts, key=lambda attempt: attempt["ts"])
-    rating = 1300.0
-    series: list[tuple[datetime, float]] = []
-
-    for attempt in ordered:
-        rating = update_topic_ratings([attempt], initial_rating=rating).get(attempt["topic"], rating)
-        series.append((attempt["ts"], rating_to_mastery(rating)))
-
-    return series
+    return normalized
 
 
 def build_state(student_id: str, window_days: int) -> tuple[list[TopicStateItem], list[ErrorStateItem]]:
@@ -175,15 +175,19 @@ def build_state(student_id: str, window_days: int) -> tuple[list[TopicStateItem]
     now_ts = datetime(2026, 3, 1, 12, 0, 0)
     all_attempts = _mock_attempts(student_id=student_id)
     cutoff_ts = now_ts - timedelta(days=window_days)
-    attempts = [attempt for attempt in all_attempts if attempt["ts"] >= cutoff_ts]
+    attempts = [attempt for attempt in all_attempts if attempt["attempted_at"] >= cutoff_ts]
 
     if not attempts:
         attempts = all_attempts
 
-    ratings = update_topic_ratings(attempts)
-    mastery_by_topic = {topic: rating_to_mastery(rating) for topic, rating in ratings.items()}
-    error_probs = infer_error_probs(attempts, mastery_by_topic)
-    patterns = detect_repeat_patterns(attempts)
+    mastery_rows = compute_topic_mastery_elo(attempts)
+    mastery_by_topic = {
+        topic: float(values.get("mastery", 0.5))
+        for topic, values in mastery_rows.items()
+    }
+    error_probs = infer_topic_error_probs(attempts, mastery_rows)
+    patterns = detect_topic_patterns(attempts)
+    trend_by_topic = compute_topic_trends(attempts)
 
     attempts_by_topic: dict[str, list[dict]] = {}
     for attempt in attempts:
@@ -191,11 +195,9 @@ def build_state(student_id: str, window_days: int) -> tuple[list[TopicStateItem]
 
     topic_state: list[TopicStateItem] = []
     for topic, topic_attempts in sorted(attempts_by_topic.items()):
-        topic_attempts_sorted = sorted(topic_attempts, key=lambda attempt: attempt["ts"])
-        last_attempt_ts = topic_attempts_sorted[-1]["ts"]
-
-        mastery_series = _build_mastery_series(topic_attempts_sorted)
-        trend_slope, _trend_label = compute_trend(mastery_series)
+        topic_attempts_sorted = sorted(topic_attempts, key=lambda attempt: attempt["attempted_at"])
+        last_attempt_ts = topic_attempts_sorted[-1]["attempted_at"]
+        trend_slope = float(trend_by_topic.get(topic, 0.0))
         decay_risk = compute_decay_risk(last_attempt_ts=last_attempt_ts, now_ts=now_ts)
 
         attempt_count = len(topic_attempts_sorted)

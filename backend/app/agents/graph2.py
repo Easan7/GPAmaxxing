@@ -1,6 +1,6 @@
-"""LangGraph workflow with Azure OpenAI intent routing.
+"""LangGraph workflow with OpenAI intent routing.
 
-This version replaces hardcoded intent routing with Azure OpenAI classification,
+This version replaces hardcoded intent routing with OpenAI classification,
 then routes to intent-specific agent paths with deterministic fallbacks.
 """
 
@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from dotenv import load_dotenv
 
 from langgraph.graph import END, START, StateGraph
-from openai import AzureOpenAI
+from openai import OpenAI
 
 try:
     from app.schemas.state import CoachRunState
@@ -35,6 +37,7 @@ except ModuleNotFoundError:
 GraphState = dict[str, Any]
 ALLOWED_INTENTS = {"TREND", "WEAKNESS", "PATTERN", "PLAN"}
 
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 def _append_trace(state: GraphState, node: str, details: dict[str, Any] | None = None) -> None:
     trace = state.get("tool_trace", [])
@@ -43,16 +46,15 @@ def _append_trace(state: GraphState, node: str, details: dict[str, Any] | None =
 
 
 @lru_cache(maxsize=1)
-def _get_azure_openai_client() -> AzureOpenAI:
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    if not endpoint or not api_key:
-        raise ValueError("Missing AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_API_KEY")
-    return AzureOpenAI(
-        azure_endpoint=endpoint,
-        api_key=api_key,
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-11-04-preview"),
-    )
+def _get_openai_client() -> OpenAI:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Missing OPENAI_API_KEY")
+    return OpenAI(api_key=api_key)
+
+
+def _get_openai_model() -> str:
+    return os.getenv("OPENAI_MODEL") or os.getenv("OPENAI_CHAT_MODEL") or "gpt-4o-mini"
 
 
 def _fallback_intent_heuristic(message: str) -> str:
@@ -66,11 +68,8 @@ def _fallback_intent_heuristic(message: str) -> str:
     return "PLAN"
 
 
-def _classify_intent_with_aoai(message: str) -> tuple[str, float, str]:
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    if not deployment:
-        fallback = _fallback_intent_heuristic(message)
-        return fallback, 0.4, "fallback_missing_deployment"
+def _classify_intent_with_openai(message: str) -> tuple[str, float, str, str | None]:
+
 
     system_prompt = (
         "You are an intent classifier for a learning coach. "
@@ -81,30 +80,44 @@ def _classify_intent_with_aoai(message: str) -> tuple[str, float, str]:
     )
 
     try:
-        client = _get_azure_openai_client()
+        client = _get_openai_client()
         response = client.chat.completions.create(
-            model=deployment,
-            temperature=0,
-            max_tokens=50,
+            model=_get_openai_model(),
+            max_completion_tokens=200,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ],
         )
         content = (response.choices[0].message.content or "").strip()
-        payload = json.loads(content)
+        if not content:
+            finish_reason = response.choices[0].finish_reason
+            raise ValueError(f"Empty model content (finish_reason={finish_reason})")
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            candidate = content
+            fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+            if fence_match:
+                candidate = fence_match.group(1)
+            else:
+                obj_match = re.search(r"\{.*\}", content, re.DOTALL)
+                if obj_match:
+                    candidate = obj_match.group(0)
+            payload = json.loads(candidate)
         intent = str(payload.get("intent", "PLAN")).upper().strip()
         confidence = float(payload.get("confidence", 0.0))
 
         if intent not in ALLOWED_INTENTS:
             fallback = _fallback_intent_heuristic(message)
-            return fallback, 0.3, "fallback_invalid_intent"
+            return fallback, 0.3, "fallback_invalid_intent", "Invalid intent returned by model"
 
         confidence = max(0.0, min(1.0, confidence))
-        return intent, confidence, "azure_openai"
-    except Exception:
+        return intent, confidence, "openai", None
+    except Exception as exc:
         fallback = _fallback_intent_heuristic(message)
-        return fallback, 0.3, "fallback_error"
+        return fallback, 0.3, "fallback_error", f"{type(exc).__name__}: {exc}"
 
 
 def node_build_state(state: GraphState) -> GraphState:
@@ -120,14 +133,20 @@ def node_build_state(state: GraphState) -> GraphState:
 
 def node_route_intent(state: GraphState) -> GraphState:
     message = str(state.get("message", "")).strip()
-    intent, confidence, source = _classify_intent_with_aoai(message)
+    intent, confidence, source, error = _classify_intent_with_openai(message)
     state["intent"] = intent
     state["intent_confidence"] = confidence
     state["intent_source"] = source
+    state["intent_error"] = error
     _append_trace(
         state,
         "route_intent",
-        {"intent": intent, "confidence": confidence, "source": source},
+        {
+            "intent": intent,
+            "confidence": confidence,
+            "source": source,
+            "error": state.get("intent_error"),
+        },
     )
     return state
 
@@ -176,50 +195,54 @@ def node_diagnosis(state: GraphState) -> GraphState:
     return state
 
 
-def node_trend_agent(state: GraphState) -> GraphState:
+def node_handle_trend(state: GraphState) -> GraphState:
     topic_state = state.get("topic_state", [])
-    lowest = min(topic_state, key=lambda item: item.get("mastery", 1.0)) if topic_state else None
-    state["agent_result"] = {
+    focus_topic = max(topic_state, key=lambda item: item.get("trend", -1.0)) if topic_state else None
+    state["diagnosis"] = {
+        "summary": "Trend analysis prepared from topic mastery snapshot.",
+        "focus_topic": focus_topic.get("topic") if focus_topic else None,
+        "trend": focus_topic.get("trend") if focus_topic else None,
+    }
+    state["artifact_type"] = "trend_report"
+    state["artifact"] = {
         "agent": "trend_agent",
         "summary": "Trend analysis prepared from topic mastery snapshot.",
-        "focus_topic": lowest.get("topic") if lowest else None,
+        "focus_topic": focus_topic.get("topic") if focus_topic else None,
+        "topic_state": topic_state,
     }
-    _append_trace(state, "trend_agent", {"focus_topic": state["agent_result"]["focus_topic"]})
+    _append_trace(state, "handle_trend", {"focus_topic": state["artifact"].get("focus_topic")})
     return state
 
 
-def node_weakness_agent(state: GraphState) -> GraphState:
+def node_handle_weakness(state: GraphState) -> GraphState:
+    state = node_diagnosis(state)
     diagnosis = state.get("diagnosis") or {}
-    state["agent_result"] = {
+    state["artifact_type"] = "weakness_report"
+    state["artifact"] = {
         "agent": "weakness_agent",
         "summary": "Weakness diagnosis generated from error pressure and mastery.",
         "focus_topic": diagnosis.get("primary_topic"),
+        "primary_issue": diagnosis.get("primary_issue"),
     }
-    _append_trace(state, "weakness_agent", {"focus_topic": diagnosis.get("primary_topic")})
+    _append_trace(state, "handle_weakness", {"focus_topic": diagnosis.get("primary_topic")})
     return state
 
 
-def node_pattern_agent(state: GraphState) -> GraphState:
+def node_handle_pattern(state: GraphState) -> GraphState:
+    state = node_diagnosis(state)
     primary_issue = (state.get("diagnosis") or {}).get("primary_issue") or {}
-    state["agent_result"] = {
+    state["artifact_type"] = "pattern_report"
+    state["artifact"] = {
         "agent": "pattern_agent",
         "summary": "Repeated error pattern identified from historical error features.",
         "pattern_topic": primary_issue.get("topic"),
+        "issue": primary_issue,
     }
-    _append_trace(state, "pattern_agent", {"pattern_topic": primary_issue.get("topic")})
+    _append_trace(state, "handle_pattern", {"pattern_topic": primary_issue.get("topic")})
     return state
 
 
-def node_optimizer(state: GraphState) -> GraphState:
-    coach_state = CoachRunState.model_validate(state)
-    allocation = optimize_time_allocation(coach_state.topic_state, coach_state.constraints)
-    state["allocation"] = allocation
-    _append_trace(state, "optimizer", {"allocated_topics": len(allocation)})
-    return state
-
-
-def node_planner(state: GraphState) -> GraphState:
-    allocation = state.get("allocation", [])
+def _build_plan_artifact_from_allocation(allocation: list[dict]) -> dict:
     checklist = [
         {
             "step": f"Practice {item['topic']} for {item['minutes']} minutes",
@@ -228,42 +251,35 @@ def node_planner(state: GraphState) -> GraphState:
         }
         for item in allocation
     ]
-    state["plan"] = {
+    return {
         "title": "Focused Session Plan",
         "checklist": checklist,
     }
-    _append_trace(state, "planner", {"steps": len(checklist)})
-    return state
 
 
-def node_evaluator(state: GraphState) -> GraphState:
+def node_handle_plan(state: GraphState) -> GraphState:
+    coach_state = CoachRunState.model_validate(state)
+    allocation = optimize_time_allocation(coach_state.topic_state, coach_state.constraints)
+    state["allocation"] = allocation
     diagnosis = state.get("diagnosis") or {}
-    note = None
-    if state.get("intent") == "PLAN" and not state.get("allocation"):
+    if not allocation:
         note = "missing time budget"
     else:
         note = "approved"
+
     diagnosis["evaluation"] = note
     state["diagnosis"] = diagnosis
-    _append_trace(state, "evaluator", {"result": note})
-    return state
+    state["plan"] = _build_plan_artifact_from_allocation(allocation)
+    state["artifact_type"] = "study_plan"
+    state["artifact"] = state.get("plan")
 
-
-def node_execute_plan_action(state: GraphState) -> GraphState:
-    """Create a study session for approved plan runs.
-
-    Safeguard: only execute when a time budget exists and allocation is non-empty.
-    """
     constraints = state.get("constraints") or {}
-    allocation = state.get("allocation") or []
-    diagnosis = state.get("diagnosis") or {}
-
-    if diagnosis.get("evaluation") != "approved":
-        _append_trace(state, "execute_plan_action", {"executed": False, "reason": "not_approved"})
+    if note != "approved":
+        _append_trace(state, "handle_plan", {"result": note, "executed": False})
         return state
 
     if "time_budget_min" not in constraints or not allocation:
-        _append_trace(state, "execute_plan_action", {"executed": False, "reason": "missing_guardrails"})
+        _append_trace(state, "handle_plan", {"result": note, "executed": False, "reason": "missing_guardrails"})
         return state
 
     result = create_study_session(
@@ -272,7 +288,7 @@ def node_execute_plan_action(state: GraphState) -> GraphState:
         run_id=str(state.get("run_id", "")),
     )
     state["action_result"] = result
-    _append_trace(state, "execute_plan_action", {"executed": True, "session_id": result.get("session_id")})
+    _append_trace(state, "handle_plan", {"result": note, "executed": True, "session_id": result.get("session_id")})
     return state
 
 
@@ -297,57 +313,42 @@ def _after_uncertainty(state: GraphState) -> str:
 
 @lru_cache(maxsize=1)
 def get_coach_graph2():
-    """Build and cache the compiled graph (v2 with AOAI intent routing)."""
+    """Build and cache the compiled graph (v2 with OpenAI intent routing)."""
     workflow = StateGraph(dict)
 
-    workflow.add_node("build_state", node_build_state)
-    workflow.add_node("route_intent", node_route_intent)
+    # Core orchestration stages: analytics snapshot -> intent classification -> clarification gate.
+    workflow.add_node("build_student_state", node_build_state)
+    workflow.add_node("classify_intent", node_route_intent)
     workflow.add_node("uncertainty_gate", node_uncertainty_gate)
 
-    workflow.add_node("diagnosis", node_diagnosis)
-    workflow.add_node("trend_agent", node_trend_agent)
-    workflow.add_node("weakness_agent", node_weakness_agent)
-    workflow.add_node("pattern_agent", node_pattern_agent)
-
-    workflow.add_node("optimizer", node_optimizer)
-    workflow.add_node("planner", node_planner)
-    workflow.add_node("evaluator", node_evaluator)
-    workflow.add_node("execute_plan_action", node_execute_plan_action)
+    # One deterministic handler per intent branch.
+    workflow.add_node("handle_trend", node_handle_trend)
+    workflow.add_node("handle_weakness", node_handle_weakness)
+    workflow.add_node("handle_pattern", node_handle_pattern)
+    workflow.add_node("handle_plan", node_handle_plan)
     workflow.add_node("finalize", node_finalize)
 
-    workflow.add_edge(START, "build_state")
-    workflow.add_edge("build_state", "route_intent")
-    workflow.add_edge("route_intent", "uncertainty_gate")
+    workflow.add_edge(START, "build_student_state")
+    workflow.add_edge("build_student_state", "classify_intent")
+    workflow.add_edge("classify_intent", "uncertainty_gate")
 
     workflow.add_conditional_edges(
         "uncertainty_gate",
         _after_uncertainty,
         {
+            # Pause immediately for clarification; otherwise route by classifier intent.
             "needs_input": END,
-            "trend": "trend_agent",
-            "weakness": "diagnosis",
-            "pattern": "diagnosis",
-            "plan": "optimizer",
+            "trend": "handle_trend",
+            "weakness": "handle_weakness",
+            "pattern": "handle_pattern",
+            "plan": "handle_plan",
         },
     )
 
-    workflow.add_edge("trend_agent", "finalize")
-
-    workflow.add_edge("diagnosis", "weakness_agent")
-    workflow.add_edge("weakness_agent", "pattern_agent")
-    workflow.add_conditional_edges(
-        "pattern_agent",
-        lambda state: "pattern" if state.get("intent") == "PATTERN" else "weakness",
-        {
-            "pattern": "finalize",
-            "weakness": "finalize",
-        },
-    )
-
-    workflow.add_edge("optimizer", "planner")
-    workflow.add_edge("planner", "evaluator")
-    workflow.add_edge("evaluator", "execute_plan_action")
-    workflow.add_edge("execute_plan_action", "finalize")
+    workflow.add_edge("handle_trend", "finalize")
+    workflow.add_edge("handle_weakness", "finalize")
+    workflow.add_edge("handle_pattern", "finalize")
+    workflow.add_edge("handle_plan", "finalize")
     workflow.add_edge("finalize", END)
 
     return workflow.compile()
@@ -380,9 +381,10 @@ def _debug_print_run_result(result: GraphState) -> None:
     if action_result:
         print(f"[DEBUG] Action Result: {action_result}")
 
-    agent_result = result.get("agent_result")
-    if agent_result:
-        print(f"[DEBUG] Agent Result: {agent_result}")
+    print(f"[DEBUG] Artifact Type: {result.get('artifact_type')}")
+    artifact = result.get("artifact")
+    if artifact:
+        print(f"[DEBUG] Artifact: {artifact}")
 
     trace = result.get("tool_trace", [])
     print(f"[DEBUG] Tool Trace Count: {len(trace)}")
@@ -392,9 +394,8 @@ def _debug_print_run_result(result: GraphState) -> None:
 
 if __name__ == "__main__":
     print("[DEBUG] Starting graph2.py test harness")
-    print(f"[DEBUG] AZURE_OPENAI_DEPLOYMENT set: {bool(os.getenv('AZURE_OPENAI_DEPLOYMENT'))}")
-    print(f"[DEBUG] AZURE_OPENAI_ENDPOINT set: {bool(os.getenv('AZURE_OPENAI_ENDPOINT'))}")
-    print(f"[DEBUG] AZURE_OPENAI_API_KEY set: {bool(os.getenv('AZURE_OPENAI_API_KEY'))}")
+    print(f"[DEBUG] OPENAI_MODEL set: {bool(os.getenv('OPENAI_MODEL') or os.getenv('OPENAI_CHAT_MODEL'))}")
+    print(f"[DEBUG] OPENAI_API_KEY set: {bool(os.getenv('OPENAI_API_KEY'))}")
 
     graph = get_coach_graph2()
 
@@ -404,7 +405,11 @@ if __name__ == "__main__":
             "constraints": {"time_budget_min": 45},
         },
         {
-            "message": "Why do I keep repeating careless mistakes in algebra?",
+            "message": "I feel weak in geometry and keep struggling with proofs.",
+            "constraints": {"time_budget_min": 30},
+        },
+        {
+            "message": "Why does this error pattern repeat again in algebra?",
             "constraints": {"time_budget_min": 30},
         },
         {

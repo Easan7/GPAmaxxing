@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
-from app.agents.graph import get_coach_graph
+from app.agents.graph2 import get_coach_graph2
 from app.schemas.coach import CoachQueryRequest
 from app.schemas.state import CoachResponseComplete, CoachResponseNeedsInput, CoachRunState
 from app.services.run_store import get_run_store
@@ -35,6 +35,8 @@ def _to_complete_response(final_state: CoachRunState) -> CoachResponseComplete:
         run_id=final_state.run_id,
         intent=final_state.intent or "PLAN",
         insights=final_state.diagnosis,
+        artifact_type=final_state.artifact_type,
+        artifact=final_state.artifact,
         plan=final_state.plan,
         evidence={
             "topic_state": [item.model_dump() for item in final_state.topic_state],
@@ -60,7 +62,7 @@ def coach_query(payload: CoachQueryRequest) -> Union[CoachResponseNeedsInput, Co
         intent=None,
     )
 
-    graph = get_coach_graph()
+    graph = get_coach_graph2()
     output = graph.invoke(initial_state.model_dump())
     final_state = CoachRunState.model_validate(output)
 
@@ -87,7 +89,7 @@ def coach_continue(payload: CoachContinueRequest) -> CoachResponseComplete:
     resumed["clarification_answer"] = payload.answer
     resumed["needs_clarification"] = False
 
-    graph = get_coach_graph()
+    graph = get_coach_graph2()
     output = graph.invoke(resumed)
     final_state = CoachRunState.model_validate(output)
 
