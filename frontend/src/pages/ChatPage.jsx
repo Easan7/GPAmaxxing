@@ -1,150 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import ChatStudio from "../components/ChatStudio"; // <-- adjust path if needed
-
-const MOCK_STUDY_PLAN = `Based on the provided analytics, the study plan focuses on areas where your mastery is lower and where there are signs of conceptual misunderstanding. Given the metrics you've provided, here's how we can refine your plan:
-
-### Revised Study Plan
-
-Title: Focused Session Plan
-
-1. User-Centred Design (13 minutes)
-   - Current mastery: 46.72% with high uncertainty (58.52%). Focus here is essential as mastery is below the 50% threshold.
-   - Practice questions similar to: "What are the key principles of User-Centred Design?" This can help increase both your knowledge and confidence, which currently stands at a risk of decay due to your low trend.
-
-2. Interaction Design (8 minutes)
-   - Current mastery: 52.08%, but with a conceptual understanding issue noted (1.0 indicating you're facing challenges in this area).
-   - Focus on questions like: "How does interaction design influence user experience?" Dedicate time to clarify conceptual misunderstandings.
-
-3. Prototyping (8 minutes)
-   - Mastery is currently unknown due to noted conceptual errors.
-   - Practice analyzing prototyping scenarios with questions such as: "What are the advantages of low-fidelity prototyping?" This will help address your conceptual gaps.
-
-4. Ideation (8 minutes)
-   - While you performed well in your attempts (correct with 80% confidence), your mastery is at 51.83%, suggesting continuous practice will reinforce this area.
-   - Example of a question to work on: "What techniques can be used to enhance creative thinking during ideation sessions?" This will maintain your confidence while building further understanding.
-
-5. Qualitative Analysis (8 minutes)
-   - Although your mastery in this area is higher than others, regular practice will help mitigate uncertainty (12.83%).
-   - Engage with questions like: "What methods can be used to analyze qualitative data effectively?"
-
-### Key Example
-- For Ideation, you have answered previously with confidence. For instance, the question, “Why should teams defer judgment during brainstorming?”, which you answered correctly in 90 seconds with 80% confidence, demonstrates that you’re building a solid foundation. Continue to work on enhancing confidence through repeated practice and deeper exploration of concepts related to brainstorming tactics.
-
-### Summary
-This study plan is specifically designed to target your uncertainties and areas where conceptual understanding is weak. By focusing on both practice and theory, you can enhance your overall mastery while ensuring you have a confident grasp on the critical concepts in your field. Adjust timing based on your comfort level, but aim to revisit these topics repetitively to solidify your learning.`;
-
-function mockCoachReply(userText) {
-  const t = userText.toLowerCase();
-  if (t.includes("study plan") || t.includes("make a plan")) return MOCK_STUDY_PLAN;
-  return `Got it. Ask me for a **study plan** and I’ll generate one based on your analytics.`;
-}
+import ChatStudio from "../components/ChatStudio"; 
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const ASSUMED_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
-
-const CLARIFICATION_FIELD_ORDER = [
-    "time_budget_min",
-    "time_horizon_days",
-    "daily_budget_min",
-    "topic_limit",
-    "focus_topics",
-    "generic_plan",
-];
-
-function createClarificationDraft(question) {
-    const expected = question?.expected || {};
-    const draft = {};
-    for (const key of CLARIFICATION_FIELD_ORDER) {
-        if (expected[key]) {
-            draft[key] = "NIL";
-        }
-    }
-    if (Object.keys(draft).length === 0) {
-        draft.message = "NIL";
-    }
-    return draft;
-}
-
-function isNil(value) {
-    return String(value ?? "").trim().toUpperCase() === "NIL" || String(value ?? "").trim() === "";
-}
-
-function buildClarificationAnswerFromDraft(draft) {
-    const answer = {};
-
-    for (const [key, rawValue] of Object.entries(draft || {})) {
-        if (isNil(rawValue)) {
-            continue;
-        }
-
-        const value = String(rawValue).trim();
-        if (key === "focus_topics") {
-            const topics = value
-                .split(/,| and |;|\+|\//i)
-                .map((item) => item.trim())
-                .filter(Boolean);
-            if (topics.length > 0) {
-                answer.focus_topics = topics;
-            }
-            continue;
-        }
-
-        if (key === "generic_plan") {
-            answer.generic_plan = /^(true|yes|y|1)$/i.test(value);
-            continue;
-        }
-
-        if (["time_budget_min", "time_horizon_days", "daily_budget_min", "topic_limit"].includes(key)) {
-            const numeric = Number.parseInt(value, 10);
-            if (!Number.isNaN(numeric) && numeric > 0) {
-                answer[key] = numeric;
-            }
-            continue;
-        }
-
-        answer[key] = value;
-    }
-
-    if (Object.keys(answer).length === 0) {
-        answer.generic_plan = true;
-    }
-    return answer;
-}
-
-const CLARIFICATION_FIELD_META = {
-    time_budget_min: {
-        label: "Total Time (minutes)",
-        hint: "Enter total study time in minutes, or NIL.",
-        placeholder: "e.g. 180 or NIL",
-    },
-    time_horizon_days: {
-        label: "Plan Horizon (days)",
-        hint: "How many days this plan should cover, or NIL.",
-        placeholder: "e.g. 14 or NIL",
-    },
-    daily_budget_min: {
-        label: "Daily Time (minutes)",
-        hint: "Optional daily budget, or NIL.",
-        placeholder: "e.g. 60 or NIL",
-    },
-    topic_limit: {
-        label: "Number of Topics",
-        hint: "How many topics to include, or NIL.",
-        placeholder: "e.g. 2 or NIL",
-    },
-    focus_note: {
-        label: "Focus Preference (optional)",
-        hint: "Free text guidance (not strict topic matching), or NIL.",
-        placeholder: "e.g. prioritize practical application or NIL",
-    },
-    generic_plan: {
-        label: "Use Generic Plan",
-        hint: "true / false or NIL.",
-        placeholder: "e.g. true or NIL",
-    },
-};
 
 function normalizeFinalText(payload) {
     const primary = payload?.artifact?.response;
@@ -166,12 +26,60 @@ function apiUrl(path) {
     return `${API_BASE}${path}`;
 }
 
+async function postJson(path, payload) {
+  const response = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Request failed with status ${response.status}`);
+  }
+  return response.json();
+}
+
+function normalizeOptions(options) {
+  if (!Array.isArray(options) || options.length === 0) {
+    return "";
+  }
+  return `\nOptions: ${options.join(", ")}`;
+}
+
+function formatClarificationPrompt(question) {
+  const prompt = question?.prompt || "I need a bit more information before I can continue.";
+  return `${prompt}${normalizeOptions(question?.options)}`;
+}
+
+function buildClarificationAnswer(question, text) {
+  const trimmed = text.trim();
+  const field = question?.field;
+
+  if (field === "time_budget_min") {
+    const timeBudget = Number.parseInt(trimmed, 10);
+    if (!Number.isNaN(timeBudget) && timeBudget > 0) {
+      return { time_budget_min: timeBudget };
+    }
+  }
+
+  if (field === "mode") {
+    const normalizedMode = trimmed.toLowerCase();
+    if (["timed", "untimed"].includes(normalizedMode)) {
+      return { mode: normalizedMode };
+    }
+  }
+
+  return { message: trimmed };
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState([
     { id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." },
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [pendingRunId, setPendingRunId] = useState(null);
+  const [pendingQuestion, setPendingQuestion] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -180,7 +88,7 @@ export default function ChatPage() {
 
   const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
 
-  function handleSend() {
+  async function handleSend() {
     if (!canSend) return;
 
     const text = input.trim();
@@ -191,13 +99,50 @@ export default function ChatPage() {
 
     setIsTyping(true);
 
-    // Mock delay (feels real). Replace with fetch() later.
-    window.setTimeout(() => {
-      const reply = mockCoachReply(text);
-      const botMsg = { id: crypto.randomUUID(), role: "assistant", content: reply };
+    try {
+      const isContinuation = Boolean(pendingRunId);
+      const endpoint = isContinuation ? "/api/coach/continue" : "/api/coach/query";
+      const payload = isContinuation
+        ? {
+            run_id: pendingRunId,
+            answer: buildClarificationAnswer(pendingQuestion, text),
+          }
+        : {
+            student_id: ASSUMED_STUDENT_ID,
+            message: text,
+            window_days: 30,
+            constraints: {},
+          };
+
+      const data = await postJson(endpoint, payload);
+
+      if (data?.status === "needs_user_input") {
+        setPendingRunId(data.run_id);
+        setPendingQuestion(data.question ?? null);
+        const botMsg = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: formatClarificationPrompt(data.question),
+        };
+        setMessages((prev) => [...prev, botMsg]);
+        return;
+      }
+
+      setPendingRunId(null);
+      setPendingQuestion(null);
+      const botMsg = { id: crypto.randomUUID(), role: "assistant", content: normalizeFinalText(data) };
       setMessages((prev) => [...prev, botMsg]);
+    } catch (error) {
+      const details = error instanceof Error ? error.message : "Unknown error";
+      const botMsg = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `I couldn't reach the backend right now. ${details}`,
+      };
+      setMessages((prev) => [...prev, botMsg]);
+    } finally {
       setIsTyping(false);
-    }, 700);
+    }
   }
 
   function onKeyDown(e) {

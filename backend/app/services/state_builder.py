@@ -26,7 +26,11 @@ def _normalize_error_probs(error_distribution: dict) -> tuple[float, float, floa
 
 def build_state(student_id: str, window_days: int) -> tuple[list[TopicStateItem], list[ErrorStateItem]]:
     """Build topic and error state from live Supabase-backed analytics."""
-    state = build_student_state(student_id=student_id, since_days=window_days)
+    try:
+        state = build_student_state(student_id=student_id, since_days=window_days)
+    except Exception:
+        # Keep agent flow alive when analytics backing store is unavailable.
+        return [], []
     topics_payload: dict[str, dict] = state.get("topics", {})
 
     topic_state: list[TopicStateItem] = []
