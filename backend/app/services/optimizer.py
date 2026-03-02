@@ -22,6 +22,7 @@ def _apply_horizon_topic_cap(
     max_per_topic: int,
     min_per_topic: int,
     time_budget_min: int,
+    topic_count: int,
     constraints: dict | None,
 ) -> int:
     """Cap per-topic allocation for long-horizon plans.
@@ -54,8 +55,89 @@ def _apply_horizon_topic_cap(
     max_share = min(1.0, max(0.1, max_share))
     share_cap = int(round(time_budget_min * max_share))
 
+    # Ensure the cap still allows the full budget to be allocated across the
+    # selected number of topics.
+    minimum_feasible_cap = max(1, (time_budget_min + max(1, topic_count) - 1) // max(1, topic_count))
+
     capped = min(max_per_topic, horizon_cap, share_cap)
+    capped = max(capped, minimum_feasible_cap)
     return max(min_per_topic, capped)
+
+
+def _preferred_round_increment(time_budget_min: int, constraints: dict | None) -> int:
+    if constraints and isinstance(constraints.get("round_increment_min"), int):
+        configured = int(constraints["round_increment_min"])
+        if configured in {1, 5, 10}:
+            return configured
+
+    if constraints and isinstance(constraints.get("time_horizon_days"), int) and int(constraints.get("time_horizon_days")) > 1:
+        return 10
+    return 5
+
+
+def _round_allocations_with_budget_guard(
+    allocations: list[dict],
+    scored_topics: list[tuple[str, float]],
+    total_budget_min: int,
+    min_per_topic: int,
+    max_per_topic: int,
+    increment: int,
+) -> list[dict]:
+    if increment <= 1 or not allocations:
+        return allocations
+
+    score_by_topic = {topic: score for topic, score in scored_topics}
+    rounded: list[dict] = []
+    for item in allocations:
+        snapped = int(round(item["minutes"] / increment) * increment)
+        snapped = max(min_per_topic, min(max_per_topic, snapped))
+        rounded.append({"topic": item["topic"], "minutes": snapped})
+
+    diff = total_budget_min - sum(item["minutes"] for item in rounded)
+    by_priority_desc = sorted(rounded, key=lambda item: score_by_topic.get(item["topic"], 0.0), reverse=True)
+    by_priority_asc = list(reversed(by_priority_desc))
+
+    safety = 0
+    while abs(diff) >= increment and safety < 2000:
+        candidates = by_priority_desc if diff > 0 else by_priority_asc
+        moved = False
+        for slot in candidates:
+            if diff > 0 and slot["minutes"] + increment <= max_per_topic:
+                slot["minutes"] += increment
+                diff -= increment
+                moved = True
+                break
+            if diff < 0 and slot["minutes"] - increment >= min_per_topic:
+                slot["minutes"] -= increment
+                diff += increment
+                moved = True
+                break
+        if not moved:
+            break
+        safety += 1
+
+    # Final single-minute reconciliation if needed.
+    safety = 0
+    while diff != 0 and safety < 4000:
+        candidates = by_priority_desc if diff > 0 else by_priority_asc
+        moved = False
+        for slot in candidates:
+            if diff > 0 and slot["minutes"] < max_per_topic:
+                slot["minutes"] += 1
+                diff -= 1
+                moved = True
+                break
+            if diff < 0 and slot["minutes"] > min_per_topic:
+                slot["minutes"] -= 1
+                diff += 1
+                moved = True
+                break
+        if not moved:
+            break
+        safety += 1
+
+    topic_order = {topic: index for index, (topic, _) in enumerate(scored_topics)}
+    return sorted(rounded, key=lambda item: topic_order.get(item["topic"], 9999))
 
 
 def optimize_time_allocation(topic_state: list[TopicStateItem], constraints: dict | None) -> list[dict]:
@@ -75,6 +157,7 @@ def optimize_time_allocation(topic_state: list[TopicStateItem], constraints: dic
         max_per_topic=max_per_topic,
         min_per_topic=min_per_topic,
         time_budget_min=time_budget_min,
+        topic_count=len(topic_state),
         constraints=constraints,
     )
 
@@ -89,9 +172,19 @@ def optimize_time_allocation(topic_state: list[TopicStateItem], constraints: dic
         max_topics = max(1, time_budget_min // min_per_topic)
         topic_candidates = topic_candidates[:max_topics]
 
+    priority_topics = {
+        str(topic).strip()
+        for topic in ((constraints or {}).get("priority_topics") or [])
+        if str(topic).strip()
+    }
+    priority_bonus_raw = (constraints or {}).get("priority_topic_bonus") if constraints else None
+    priority_bonus = float(priority_bonus_raw) if isinstance(priority_bonus_raw, (int, float)) else 0.35
+
     scored_topics: list[tuple[str, float]] = []
     for item in topic_candidates:
         score = max(0.0, (1.0 - item.mastery) + item.decay_risk)
+        if item.topic in priority_topics:
+            score += max(0.0, priority_bonus)
         scored_topics.append((item.topic, score))
 
     total_score = sum(score for _, score in scored_topics)
@@ -145,5 +238,14 @@ def optimize_time_allocation(topic_state: list[TopicStateItem], constraints: dic
                 break
 
     # Keep original priority order for readability.
+    rounded = _round_allocations_with_budget_guard(
+        allocations=rounded,
+        scored_topics=scored_topics,
+        total_budget_min=time_budget_min,
+        min_per_topic=min_per_topic,
+        max_per_topic=max_per_topic,
+        increment=_preferred_round_increment(time_budget_min, constraints),
+    )
+
     topic_order = {topic: index for index, (topic, _) in enumerate(scored_topics)}
     return sorted(rounded, key=lambda item: topic_order.get(item["topic"], 9999))
