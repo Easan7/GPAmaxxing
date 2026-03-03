@@ -24,6 +24,7 @@ try:
     from app.config import get_settings
     from app.storage.supabase_client import create_supabase_client
     from app.services.session_service import create_study_session
+    from app.services.study_plan_service import persist_study_plan
     from app.services.state_builder import build_state
 except ModuleNotFoundError:
     backend_root = Path(__file__).resolve().parents[2]
@@ -33,6 +34,7 @@ except ModuleNotFoundError:
     from app.config import get_settings
     from app.storage.supabase_client import create_supabase_client
     from app.services.session_service import create_study_session
+    from app.services.study_plan_service import persist_study_plan
     from app.services.state_builder import build_state
 
 GraphState = dict[str, Any]
@@ -3302,7 +3304,29 @@ def node_handle_plan(state: GraphState) -> GraphState:
         plan=state.get("plan") or {},
         run_id=str(state.get("run_id", "")),
     )
-    state["action_result"] = result
+
+    plan_persistence = persist_study_plan(
+        student_id=str(state.get("student_id", "")),
+        query=str(state.get("message") or ""),
+        window_days=int(state.get("window_days") or 0),
+        constraints=constraints,
+        analytics_snapshot={
+            "topic_state": [item.model_dump() for item in coach_state.topic_state],
+            "error_state": [item.model_dump() for item in coach_state.error_state],
+            "attempt_evidence": state.get("attempt_evidence") or {},
+        },
+        llm_model=_get_openai_model(),
+        llm_response=str((state.get("plan") or {}).get("response") or ""),
+        llm_response_json=state.get("plan") or {},
+        llm_prompt_version="plan_v1",
+    )
+
+    state["action_result"] = {
+        "study_session": result,
+        "study_plan": plan_persistence,
+        "session_id": result.get("session_id"),
+        "plan_id": plan_persistence.get("plan_id"),
+    }
     _append_trace(
         state,
         "handle_plan",
@@ -3310,6 +3334,8 @@ def node_handle_plan(state: GraphState) -> GraphState:
             "result": note,
             "executed": True,
             "session_id": result.get("session_id"),
+            "plan_id": plan_persistence.get("plan_id"),
+            "plan_persisted": bool(plan_persistence.get("persisted")),
             "topic_limit": constraints.get("topic_limit"),
             "selected_topics": selected_topics,
         },

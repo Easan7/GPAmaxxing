@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str | None = None
     OPENAI_CHAT_MODEL: str | None = None
     OPENAI_BASE_URL: str | None = None
+    QUESTION_GEN_MODEL: str | None = None
+    QUESTION_GEN_OPENAI_API_KEY: str | None = None
+    QUESTION_GEN_OPENAI_BASE_URL: str | None = None
 
     AZURE_SEARCH_ENDPOINT: str | None = None
     AZURE_SEARCH_KEY: str | None = None

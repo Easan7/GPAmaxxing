@@ -411,11 +411,32 @@ function Avatar({ role }) {
 }
 
 function TypingDots() {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce [animation-delay:-0.2s]" />
-      <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce [animation-delay:-0.1s]" />
-      <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
-    </div>
-  );
+    return (
+        <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce [animation-delay:-0.2s]" />
+            <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce [animation-delay:-0.1s]" />
+            <span className="w-2 h-2 rounded-full bg-gray-300 animate-bounce" />
+        </div>
+    );
+}
+
+function PlanModeTips() {
+    return (
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700">Planning Mode Tips</p>
+                <span className="text-[11px] font-semibold text-indigo-600">Saved to My Plan tab</span>
+            </div>
+
+            <p className="text-sm text-indigo-900 mb-3">
+                Your generated plan will appear in the My Plan tab so you can track each task status.
+            </p>
+
+            <ul className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-700">
+                <li className="rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">Time horizon (e.g. next 14 days)</li>
+                <li className="rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">Total or daily time (e.g. 90 min/day)</li>
+                <li className="rounded-lg bg-white/70 border border-indigo-100 px-3 py-2">Topic scope (e.g. top 3 weakest topics)</li>
+            </ul>
+        </div>
+    );
 }

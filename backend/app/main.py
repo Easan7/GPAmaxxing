@@ -4,8 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.analytics import router as analytics_router
+from app.api.attempts import router as attempts_router
 from app.api.coach import router as coach_router
 from app.api.health import router as health_router
+from app.api.plans import router as plans_router
 from app.config import get_settings
 
 
@@ -34,6 +36,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(analytics_router)
     app.include_router(coach_router)
+    app.include_router(plans_router)
+    app.include_router(attempts_router)
 
     @app.get("/")
     def root() -> dict[str, str]:
