@@ -26,6 +26,29 @@ function apiUrl(path) {
     return `${API_BASE}${path}`;
 }
 
+function formatAssistantContent(rawText) {
+  const text = String(rawText ?? "");
+  return text
+    .replace(/\b(Targeted|Targetted)\s+Actions:\s*/gi, "\n**Targeted Actions:**\n")
+    .replace(/\bResources\s+to\s+Review:\s*/gi, "\n**Resources to Review:**\n");
+}
+
+function normalizeNodeText(children) {
+  return children
+    .map((child) => {
+      if (typeof child === "string") return child;
+      if (child && typeof child === "object" && "props" in child && child.props?.children) {
+        const nested = child.props.children;
+        if (Array.isArray(nested)) return normalizeNodeText(nested);
+        return typeof nested === "string" ? nested : "";
+      }
+      return "";
+    })
+    .join("")
+    .trim()
+    .toLowerCase();
+}
+
 async function postJson(path, payload) {
   const response = await fetch(apiUrl(path), {
     method: "POST",
@@ -221,6 +244,7 @@ export default function ChatPage() {
 
 function MessageRow({ role, content }) {
   const isUser = role === "user";
+  const displayContent = isUser ? content : formatAssistantContent(content);
 
   return (
     <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -235,10 +259,26 @@ function MessageRow({ role, content }) {
       >
         {role === "assistant" ? (
           <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-1">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                strong: ({ children }) => {
+                  const text = normalizeNodeText(Array.isArray(children) ? children : [children]);
+                  const shouldUnderline =
+                    text.includes("targeted actions:") || text.includes("resources to review:");
+                  return (
+                    <strong className={shouldUnderline ? "underline underline-offset-4" : undefined}>
+                      {children}
+                    </strong>
+                  );
+                },
+              }}
+            >
+              {displayContent}
+            </ReactMarkdown>
           </div>
         ) : (
-          <div className="text-sm leading-6 whitespace-pre-wrap">{content}</div>
+          <div className="text-sm leading-6 whitespace-pre-wrap">{displayContent}</div>
         )}
       </div>
 
