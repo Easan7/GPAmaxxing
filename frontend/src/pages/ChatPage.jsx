@@ -246,7 +246,7 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="h-14 px-6 flex items-center border-b border-gray-100 bg-white shrink-0">
-          <div className="text-sm font-semibold text-gray-900">AI Agent</div>
+          <div className="text-sm font-semibold text-gray-900">AI-tutor</div>
         </div>
 
         {/* Messages */}
@@ -278,7 +278,7 @@ export default function ChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
                 rows={1}
-                placeholder="Message AI Agent..."
+                placeholder="Message AI-tutor..."
                 className="flex-1 resize-none outline-none text-sm leading-6 max-h-40 py-2"
               />
               <button

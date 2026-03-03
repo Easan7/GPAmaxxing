@@ -105,7 +105,7 @@ export default function TopicsNeedingAttention({ studentId, windowDays = 180 }) 
 
     function handleActionClick(action) {
         const payload = {
-            prefill: buildPrefillPrompt(action),
+            prefill: action?.query_prompt || buildPrefillPrompt(action),
             constraints: buildConstraints(action),
         };
         try {
@@ -127,9 +127,6 @@ export default function TopicsNeedingAttention({ studentId, windowDays = 180 }) 
                         {loading ? "Building recommendations..." : error ? "Recommendations unavailable" : "Ranked from your latest analytics"}
                     </p>
                 </div>
-                <button className="text-sm font-bold text-[#FF517F] hover:text-[#FF7A59] transition-colors">
-                    View All
-                </button>
             </div>
 
             {/* List Container */}

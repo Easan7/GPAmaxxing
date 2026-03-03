@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Bot } from "lucide-react";
 
 const navItems = [
-  { label: "AI Agent", icon: Bot, path: "/chat" },
+  { label: "AI-tutor", icon: Bot, path: "/chat" },
   { label: "Analytics", icon: LayoutDashboard, path: "/analytics" },
 ];
 

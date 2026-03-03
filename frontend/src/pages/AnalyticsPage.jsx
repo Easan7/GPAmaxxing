@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
 import ErrorBreakdownChart from "../components/ErrorBreakdownChart";
 import MovingAverageChart from "../components/MovingAverageChart";
 import TopicsNeedingAttention from "../components/TopicsNeedingAttention.jsx";
@@ -79,11 +78,8 @@ export default function AnalyticsPage() {
                     
                     {/* Pink card */}
                     <div className="bg-gradient-to-br from-[#FF517F] to-[#FF7A59] rounded-[2rem] p-6 text-white shadow-lg flex flex-col justify-between h-full">
-                        <div className="flex justify-between items-start">
+                        <div className="flex items-start">
                             <span className="text-sm font-medium opacity-90 tracking-wide">Current Mastery Level</span>
-                            <button className="hover:bg-white/20 p-1 rounded-full transition-colors cursor-pointer">
-                                <MoreHorizontal className="w-5 h-5 text-white" />
-                            </button>
                         </div>
                         <h2 className="text-[2.5rem] leading-none font-bold mt-2 tracking-tight">{masteryLevel}</h2>
                         <div className="flex-1 w-full flex items-center justify-center -mt-2">

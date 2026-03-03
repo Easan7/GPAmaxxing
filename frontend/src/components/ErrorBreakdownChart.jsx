@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -90,11 +89,8 @@ export default function ErrorBreakdownChart({ studentId, windowDays = 180 }) {
         <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 h-full flex flex-col justify-between">
             
             {/* Header */}
-            <div className="flex justify-between items-start">
+            <div className="flex items-start">
                 <span className="text-sm font-bold text-gray-800 tracking-wide">Error Breakdown</span>
-                <button className="hover:bg-gray-100 p-1 rounded-full transition-colors cursor-pointer text-gray-400">
-                    <MoreHorizontal className="w-5 h-5" />
-                </button>
             </div>
             <div className="mt-2 text-xs font-semibold text-gray-400">
                 {loading ? "Loading..." : error ? "Unavailable" : `Last ${windowDays} days`}
