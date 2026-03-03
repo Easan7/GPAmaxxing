@@ -376,6 +376,16 @@ def _truncate_text(text: str, max_len: int = 220) -> str:
     return normalized[: max_len - 3].rstrip() + "..."
 
 
+def _normalize_source_name(value: Any) -> str:
+    source = str(value or "").strip()
+    if not source:
+        return "unknown"
+    source = source.strip('"\'')
+    source = re.sub(r"^\s*\d+[\).:\-]\s*", "", source)
+    source = re.sub(r"\s+", " ", source).strip()
+    return source or "unknown"
+
+
 def _build_relevant_attempt_examples(state: GraphState, max_items: int = 8) -> list[dict[str, Any]]:
     evidence = state.get("attempt_evidence") or {}
     samples = list(evidence.get("all_samples") or [])
@@ -499,9 +509,25 @@ def _build_rag_queries_from_attempts(state: GraphState, branch: str, max_queries
     for sample in wrong_samples:
         topic = str(sample.get("topic") or "").strip()
         question = _truncate_text(str(sample.get("question_content") or "").strip(), max_len=220)
-        if not question:
+        question_type = str(sample.get("question_type") or "").strip()
+        difficulty = str(sample.get("difficulty") or "").strip()
+        tags = [str(tag).strip() for tag in (sample.get("tags") or []) if str(tag).strip()]
+
+        query_parts: list[str] = []
+        if question:
+            query_parts.append(question)
+        if question_type:
+            query_parts.append(f"question_type {question_type}")
+        if difficulty:
+            query_parts.append(f"difficulty {difficulty}")
+        if tags:
+            query_parts.append(f"tags {' '.join(tags[:4])}")
+
+        if not query_parts:
             continue
-        query = f"{topic}: {question}" if topic else question
+
+        query_body = _truncate_text("; ".join(query_parts), max_len=280)
+        query = f"{topic}: {query_body}" if topic else query_body
         if query not in queries:
             queries.append(query)
         if len(queries) >= max_queries:
@@ -545,7 +571,7 @@ def _retrieve_rag_context_from_wrong_attempts(
 
         for item in result.get("documents") or []:
             content = _truncate_text(str(item.get("content") or "").strip(), max_len=900)
-            source = str(item.get("source") or "unknown")
+            source = _normalize_source_name(item.get("source"))
             path = str(item.get("path") or "")
             score = float(item.get("score") or 0.0)
             signature = f"{source}|{path}|{content[:120]}"
@@ -582,7 +608,7 @@ def _build_rag_resource_recommendations(rag_context: list[dict[str, Any]], max_i
     recommendations: list[dict[str, Any]] = []
     seen_sources: set[str] = set()
     for item in rag_context or []:
-        source = str(item.get("source") or "").strip()
+        source = _normalize_source_name(item.get("source"))
         if not source or source in seen_sources:
             continue
         seen_sources.add(source)
@@ -590,13 +616,131 @@ def _build_rag_resource_recommendations(rag_context: list[dict[str, Any]], max_i
             {
                 "source": source,
                 "summary": _truncate_text(str(item.get("content") or "").strip(), max_len=180),
-                "linked_query": str(item.get("query") or "").strip(),
+                "review_focus": _truncate_text(str(item.get("query") or "").strip(), max_len=160),
                 "score": float(item.get("score") or 0.0),
             }
         )
         if len(recommendations) >= max_items:
             break
     return recommendations
+
+
+def _build_rag_mistake_context(
+    state: GraphState,
+    branch: str,
+    rag_context: list[dict[str, Any]],
+    *,
+    max_items: int = 4,
+    max_note_refs: int = 2,
+) -> list[dict[str, Any]]:
+    evidence = state.get("attempt_evidence") or {}
+    focus_topics = {topic.lower() for topic in _derive_rag_focus_topics(state, branch)}
+
+    all_samples = list(evidence.get("all_samples") or [])
+    wrong_samples = [sample for sample in all_samples if not bool(sample.get("correct", False))]
+    if not wrong_samples:
+        wrong_samples = list(evidence.get("wrong_samples") or [])
+
+    if focus_topics:
+        filtered = [
+            sample
+            for sample in wrong_samples
+            if str(sample.get("topic") or "").strip().lower() in focus_topics
+        ]
+        if filtered:
+            wrong_samples = filtered
+
+    stop_words = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "what",
+        "when",
+        "where",
+        "which",
+        "into",
+        "about",
+        "your",
+        "their",
+        "have",
+        "has",
+        "were",
+    }
+
+    def _question_keywords(text: str) -> list[str]:
+        words = re.findall(r"[a-zA-Z0-9_]{4,}", text.lower())
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for word in words:
+            if word in stop_words or word in seen:
+                continue
+            seen.add(word)
+            deduped.append(word)
+            if len(deduped) >= 10:
+                break
+        return deduped
+
+    context_items: list[dict[str, Any]] = []
+    for sample in wrong_samples:
+        topic = str(sample.get("topic") or "").strip()
+        question = _truncate_text(str(sample.get("question_content") or "").strip(), max_len=180)
+        if not question:
+            continue
+
+        keywords = _question_keywords(question)
+        ranked_refs: list[tuple[int, float, dict[str, Any]]] = []
+        for note in rag_context or []:
+            note_text = str(note.get("content") or "")
+            source = str(note.get("source") or "")
+            linked_query = str(note.get("query") or "")
+            haystack = f"{source} {linked_query} {note_text[:500]}".lower()
+
+            relevance = 0
+            if topic and topic.lower() in haystack:
+                relevance += 3
+            relevance += sum(1 for keyword in keywords if keyword in haystack)
+            if relevance <= 0:
+                continue
+
+            ranked_refs.append((relevance, float(note.get("score") or 0.0), note))
+
+        ranked_refs.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        selected_refs = ranked_refs[:max_note_refs]
+        if not selected_refs and rag_context:
+            selected_refs = [(0, float((rag_context[0] or {}).get("score") or 0.0), rag_context[0])]
+
+        note_context = [
+            {
+                "source": _normalize_source_name(ref.get("source")),
+                "linked_query": str(ref.get("query") or ""),
+                "snippet": _truncate_text(str(ref.get("content") or "").strip(), max_len=260),
+                "score": float(ref.get("score") or 0.0),
+            }
+            for _, _, ref in selected_refs
+            if str(ref.get("content") or "").strip()
+        ]
+        if not note_context:
+            continue
+
+        context_items.append(
+            {
+                "topic": topic or "Unknown",
+                "question_snippet": question,
+                "question_type": str(sample.get("question_type") or "").strip(),
+                "difficulty": str(sample.get("difficulty") or "").strip(),
+                "tags": [str(tag).strip() for tag in (sample.get("tags") or []) if str(tag).strip()][:4],
+                "retrieved_note_context": note_context,
+            }
+        )
+
+        if len(context_items) >= max_items:
+            break
+
+    return context_items
 
 
 def _generate_branch_response(state: GraphState, branch: str) -> str:
@@ -606,6 +750,7 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
     attempt_evidence = state.get("attempt_evidence") or {}
     rag_context = _ensure_branch_rag_context(state, branch)
     rag_resources = _build_rag_resource_recommendations(rag_context)
+    rag_mistake_context = _build_rag_mistake_context(state, branch, rag_context)
 
     topic_state = list(state.get("topic_state") or [])
     topic_state = sorted(topic_state, key=lambda item: item.get("mastery", 1.0))[:5]
@@ -727,6 +872,7 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         "relevant_attempt_examples": compact_examples,
         "rag_context": rag_context,
         "rag_resources": rag_resources,
+        "rag_mistake_context": rag_mistake_context,
         "constraints": state.get("constraints"),
     }
 
@@ -737,8 +883,10 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         ),
         "WEAKNESS": (
             "WEAKNESS OUTPUT RULES: keep response concise (max 5 bullets), diagnose likely causes and give 2-3 targeted actions. "
-            "When rag_context or rag_resources are present, add a short 'RESOURCES TO REVIEW' section with 2-4 items. "
+            "When rag_context or rag_resources are present, add a short '**Resources to Review**' section with 2-4 items. "
             "Each item must include: resource source name, one misunderstanding summary tied to the user's wrong-attempt topic/question, and what to review next. "
+            "Format each resource line as a plain bullet '- **SourceName** — what to review next' (no numbering, no quotation marks around source names). "
+            "Do not output markdown separators like '---', '***', or horizontal rules. "
             "Do not provide full plan structures, minute allocations, or weekly schedules unless PLAN intent is present."
         ),
         "PLAN": (
@@ -761,6 +909,10 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         f"{branch_directive} "
         "If rag_context is provided, incorporate relevant note excerpts to explain the specific mistake mechanism and how to improve. "
         "If rag_resources is provided, recommend those resources explicitly with source references. "
+        "If rag_mistake_context is provided, prioritize those mistake-to-note links so each recommendation maps to a specific wrong question pattern. "
+        "Do not use labels like 'linked query'; describe it naturally as what to review next. "
+        "Use markdown bold for section headings where appropriate (for example: **Resources to Review**). "
+        "Do not output markdown separators like '---', '***', or horizontal rules. "
         "Cite note sources in plain text like (Source: filename.pdf). "
         "For TREND/WEAKNESS, use natural wording (for example: getting better, slipping, staying steady, repeated concept gap). "
         "Do not start the response with 'The analysis indicates', 'This analysis indicates', or close variants. "
@@ -781,7 +933,11 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         "When plan_topics are provided, use those labels verbatim and avoid renaming, nesting, or adding parenthetical qualifiers. "
         "Do not present listed topics as subtopics of another topic unless explicitly provided that hierarchy in the input. "
         "If rag_context is provided, ground explanation and corrective actions in those lecturer-note snippets where relevant, and cite sources in plain text like (Source: filename.pdf). "
-        "If rag_resources is provided, include a clear 'RESOURCES TO REVIEW' section and connect each resource to a misunderstanding from recent wrong attempts. "
+        "If rag_mistake_context is provided, directly connect each major weakness to those wrong-question snippets and their linked note excerpts. "
+        "If rag_resources is provided, include a clear '**Resources to Review**' section and connect each resource to a misunderstanding from recent wrong attempts. "
+        "Format each resource as a plain bullet '- **SourceName** — what to review next' (no numbering, no quotation marks). "
+        "Use markdown bold for section headings where appropriate (for example: **Resources to Review**). "
+        "Do not use labels like 'linked query'. Do not output markdown separators like '---', '***', or horizontal rules. "
         f"{branch_directive} "
         "For TREND/WEAKNESS: identify 2-3 core issues, explain why each is happening from mastery/trend/retention-risk/error signals, and give specific next micro-actions. "
         "For PLAN: explain and enrich the provided deterministic plan; do not alter minute allocation or daily schedule. "
@@ -796,6 +952,7 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         "topic_state": topic_signals[:3],
         "error_state": error_signals[:3],
         "relevant_attempt_examples": compact_examples[:2],
+        "rag_mistake_context": rag_mistake_context[:2],
     }
 
     attempts_plan = [
@@ -873,12 +1030,12 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
             )
         if rag_resources:
             resource_lines = [
-                f"- {item.get('source')}: review {item.get('linked_query') or 'the related concept'}"
+                f"- **{item.get('source')}**: review {item.get('review_focus') or 'the related concept'}"
                 for item in rag_resources[:3]
                 if str(item.get("source") or "").strip()
             ]
             if resource_lines:
-                fallback_text = f"{fallback_text}\n\nRESOURCES TO REVIEW\n" + "\n".join(resource_lines)
+                fallback_text = f"{fallback_text}\n\n**Resources to Review**\n" + "\n".join(resource_lines)
 
     debug = dict(state.get("response_debug") or {})
     debug[branch] = {
