@@ -41,3 +41,25 @@ class AnalyticsSummaryResponse(BaseModel):
     days_since_last_study: int | None
     suggested_focus_topic: str | None
     generated_at: datetime
+
+
+class NextBestActionItem(BaseModel):
+    """A prioritized action recommendation for the dashboard panel."""
+
+    id: str
+    topic: str
+    issue: str
+    detail: str
+    action_label: str
+    action_type: str
+    priority_score: float
+    eta_min: int
+
+
+class NextBestActionsResponse(BaseModel):
+    """Response payload for the Next Best Actions panel."""
+
+    student_id: str
+    window_days: int
+    actions: list[NextBestActionItem]
+    generated_at: datetime

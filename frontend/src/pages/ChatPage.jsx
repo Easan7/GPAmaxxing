@@ -5,6 +5,8 @@ import ChatStudio from "../components/ChatStudio";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const ASSUMED_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
+const CHAT_STORAGE_KEY = "gpa_chat_state_v1";
+const CHAT_ACTION_STORAGE_KEY = "gpa_chat_action_v1";
 
 function normalizeFinalText(payload) {
     const primary = payload?.artifact?.response;
@@ -96,18 +98,79 @@ function buildClarificationAnswer(question, text) {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState([
-    { id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." },
-  ]);
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (!saved) {
+        return [{ id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." }];
+      }
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed?.messages) && parsed.messages.length > 0) {
+        return parsed.messages;
+      }
+    } catch {
+      // Ignore malformed localStorage payloads and fall back to default.
+    }
+    return [{ id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." }];
+  });
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [pendingRunId, setPendingRunId] = useState(null);
-  const [pendingQuestion, setPendingQuestion] = useState(null);
+  const [nextSendConstraints, setNextSendConstraints] = useState({});
+  const [pendingRunId, setPendingRunId] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+      const parsed = saved ? JSON.parse(saved) : null;
+      return parsed?.pendingRunId ?? null;
+    } catch {
+      return null;
+    }
+  });
+  const [pendingQuestion, setPendingQuestion] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+      const parsed = saved ? JSON.parse(saved) : null;
+      return parsed?.pendingQuestion ?? null;
+    } catch {
+      return null;
+    }
+  });
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_ACTION_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.prefill === "string" && parsed.prefill.trim()) {
+        setInput(parsed.prefill.trim());
+      }
+      if (parsed?.constraints && typeof parsed.constraints === "object") {
+        setNextSendConstraints(parsed.constraints);
+      }
+      localStorage.removeItem(CHAT_ACTION_STORAGE_KEY);
+    } catch {
+      // Ignore malformed action payloads.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        CHAT_STORAGE_KEY,
+        JSON.stringify({
+          messages,
+          pendingRunId,
+          pendingQuestion,
+        })
+      );
+    } catch {
+      // Ignore storage write failures (private mode/quota).
+    }
+  }, [messages, pendingRunId, pendingQuestion]);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
 
@@ -134,12 +197,13 @@ export default function ChatPage() {
             student_id: ASSUMED_STUDENT_ID,
             message: text,
             window_days: 180,
-            constraints: {},
+            constraints: nextSendConstraints,
           };
 
       const data = await postJson(endpoint, payload);
 
       if (data?.status === "needs_user_input") {
+        setNextSendConstraints({});
         setPendingRunId(data.run_id);
         setPendingQuestion(data.question ?? null);
         const botMsg = {
@@ -153,6 +217,7 @@ export default function ChatPage() {
 
       setPendingRunId(null);
       setPendingQuestion(null);
+      setNextSendConstraints({});
       const botMsg = { id: crypto.randomUUID(), role: "assistant", content: normalizeFinalText(data) };
       setMessages((prev) => [...prev, botMsg]);
     } catch (error) {

@@ -114,7 +114,7 @@ export default function AnalyticsPage() {
                 </div>
 
                 {/* Will need to be remade into different tabs based on what we see fit later */}
-                <TopicsNeedingAttention />
+                <TopicsNeedingAttention studentId={DEMO_STUDENT_ID} windowDays={180} />
 
             </div>
 

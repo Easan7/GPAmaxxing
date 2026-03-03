@@ -11,7 +11,12 @@ from app.models.analytics.error_inference import (
 from app.models.analytics.mastery_elo import compute_topic_mastery_elo
 from app.models.analytics.repo import fetch_attempts_join_questions
 from app.models.analytics.student_state import build_student_state
-from app.schemas.analytics import AnalyticsSummaryResponse, ErrorBreakdownResponse
+from app.schemas.analytics import (
+    AnalyticsSummaryResponse,
+    ErrorBreakdownResponse,
+    NextBestActionItem,
+    NextBestActionsResponse,
+)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -25,6 +30,13 @@ def _percent(count: int, total: int) -> float:
 def _mastery_level_from_average(avg_mastery: float) -> int:
     bounded = max(0.0, min(1.0, avg_mastery))
     return max(1, min(5, int(round(bounded * 4.0)) + 1))
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 @router.get("/error-breakdown", response_model=ErrorBreakdownResponse)
@@ -139,5 +151,108 @@ def analytics_summary(
         last_attempted_at=last_attempted_at,
         days_since_last_study=days_since_last_study,
         suggested_focus_topic=suggested_focus_topic,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+@router.get("/next-actions", response_model=NextBestActionsResponse)
+def next_best_actions(
+    student_id: str = Query(..., min_length=1),
+    window_days: int = Query(180, ge=1, le=3650),
+) -> NextBestActionsResponse:
+    """Return top prioritized learner actions from current analytics signals."""
+    try:
+        state = build_student_state(student_id=student_id, since_days=window_days)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Analytics backend unavailable: {type(exc).__name__}: {exc}") from exc
+
+    topics = state.get("topics") or {}
+    ranked: list[dict] = []
+    for topic, payload in topics.items():
+        topic_payload = payload or {}
+        mastery = _safe_float(topic_payload.get("mastery"), 0.0)
+        decay_risk = _safe_float((topic_payload.get("decay") or {}).get("decay_risk"), 0.0)
+
+        errors = topic_payload.get("error_distribution") or {}
+        total_wrong = int(errors.get("total_wrong", 0) or 0)
+        conceptual_count = int(errors.get("conceptual", 0) or 0)
+        conceptual_ratio = (conceptual_count / total_wrong) if total_wrong > 0 else 0.0
+
+        trend_label = str((topic_payload.get("trend") or {}).get("label") or "").strip().lower()
+        trend_penalty = 0.08 if trend_label == "regressing" else 0.0
+
+        priority = ((1.0 - mastery) * 0.45) + (conceptual_ratio * 0.35) + (decay_risk * 0.20) + trend_penalty
+        ranked.append(
+            {
+                "topic": str(topic),
+                "priority": round(priority, 4),
+                "mastery": mastery,
+                "decay_risk": decay_risk,
+                "total_wrong": total_wrong,
+                "conceptual_ratio": conceptual_ratio,
+                "trend_label": trend_label,
+            }
+        )
+
+    ranked.sort(key=lambda item: item["priority"], reverse=True)
+
+    actions: list[NextBestActionItem] = []
+    for idx, item in enumerate(ranked[:3], start=1):
+        issue = "Low mastery priority"
+        detail = f"Mastery is currently {round(item['mastery'] * 100)}% in this topic."
+        action_label = "Ask AI Tutor"
+        action_type = "ask_ai_tutor"
+        eta_min = 20
+
+        if item["total_wrong"] > 0 and item["conceptual_ratio"] >= 0.5:
+            issue = "Conceptual gap detected"
+            detail = f"Conceptual errors are {round(item['conceptual_ratio'] * 100)}% of recent mistakes."
+            action_label = "Practice Drill"
+            action_type = "start_practice"
+            eta_min = 25
+        elif item["decay_risk"] >= 0.6:
+            issue = "High retention risk"
+            detail = "Recent performance suggests knowledge decay risk is elevated."
+            action_label = "Review Notes"
+            action_type = "review_notes"
+            eta_min = 15
+        elif item["trend_label"] == "regressing":
+            issue = "Regressing trend"
+            detail = "Trend is slipping compared to your prior attempts."
+            action_label = "Generate Plan"
+            action_type = "generate_plan"
+            eta_min = 10
+
+        actions.append(
+            NextBestActionItem(
+                id=f"nba-{idx}",
+                topic=item["topic"],
+                issue=issue,
+                detail=detail,
+                action_label=action_label,
+                action_type=action_type,
+                priority_score=item["priority"],
+                eta_min=eta_min,
+            )
+        )
+
+    if not actions:
+        actions = [
+            NextBestActionItem(
+                id="nba-1",
+                topic="General",
+                issue="Insufficient topic signals",
+                detail="Complete a few practice attempts to unlock personalized action ranking.",
+                action_label="Generate Plan",
+                action_type="generate_plan",
+                priority_score=0.0,
+                eta_min=10,
+            )
+        ]
+
+    return NextBestActionsResponse(
+        student_id=student_id,
+        window_days=window_days,
+        actions=actions,
         generated_at=datetime.now(timezone.utc),
     )

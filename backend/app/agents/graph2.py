@@ -3048,10 +3048,13 @@ def _render_plan_response_from_artifact(plan: dict | None) -> str:
 
     lines.append("")
     lines.append("**SCHEDULE**")
+    lines.append("")
     if daily_schedule:
         for day in daily_schedule:
             day_num = int(day.get("day") or 0)
+            lines.append("")
             lines.append(f"**Day {day_num}**")
+            lines.append("")
             for item in day.get("topics") or []:
                 topic = str(item.get("topic") or "").strip()
                 minutes = int(item.get("minutes") or 0)
