@@ -52,6 +52,7 @@ class NextBestActionItem(BaseModel):
     detail: str
     action_label: str
     action_type: str
+    query_prompt: str
     priority_score: float
     eta_min: int
 
