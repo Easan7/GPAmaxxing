@@ -884,8 +884,6 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         "WEAKNESS": (
             "WEAKNESS OUTPUT RULES: keep response concise (max 5 bullets), diagnose likely causes and provide 2-5 unified next-step actions. "
             "Integrate actions and resources into a single **Next Steps** list. "
-            #             "Format each resource line as a plain bullet '- **<real source name>** — what to review next' (no numbering, no quotation marks around source names). "
-            # "Use the exact source names from rag_resources; never output the placeholder literal 'SourceName'. "
             "Each action item must have a bold main action/verb phrase followed by colon and explanation: '- **Review <real source name>** — ' (no numbering, no quotation marks around source names) or '- **Practice X**— rationale'. "
             "Use the exact source names from rag_resources; never output the placeholder literal 'SourceName'. "
             "When rag_resources are present, include 1-2 resource items within the unified action list tied to specific misunderstandings from wrong attempts. "
