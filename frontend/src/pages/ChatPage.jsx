@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import ChatStudio from "../components/ChatStudio"; 
+import ChatStudio from "../components/ChatStudio";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const ASSUMED_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
@@ -9,23 +9,23 @@ const CHAT_STORAGE_KEY = "gpa_chat_state_v1";
 const CHAT_ACTION_STORAGE_KEY = "gpa_chat_action_v1";
 
 function normalizeFinalText(payload) {
-    const primary = payload?.artifact?.response;
-    if (typeof primary === "string" && primary.trim()) {
-        return primary.trim();
-    }
-    const plan = payload?.plan?.response;
-    if (typeof plan === "string" && plan.trim()) {
-        return plan.trim();
-    }
-    const fallback = payload?.artifact?.summary;
-    if (typeof fallback === "string" && fallback.trim()) {
-        return fallback.trim();
-    }
-    return "I completed the workflow, but no response text was returned.";
+  const primary = payload?.artifact?.response;
+  if (typeof primary === "string" && primary.trim()) {
+    return primary.trim();
+  }
+  const plan = payload?.plan?.response;
+  if (typeof plan === "string" && plan.trim()) {
+    return plan.trim();
+  }
+  const fallback = payload?.artifact?.summary;
+  if (typeof fallback === "string" && fallback.trim()) {
+    return fallback.trim();
+  }
+  return "I completed the workflow, but no response text was returned.";
 }
 
 function apiUrl(path) {
-    return `${API_BASE}${path}`;
+  return `${API_BASE}${path}`;
 }
 
 function formatAssistantContent(rawText) {
@@ -102,7 +102,7 @@ export default function ChatPage() {
     try {
       const saved = localStorage.getItem(CHAT_STORAGE_KEY);
       if (!saved) {
-        return [{ id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." }];
+        return [{ id: "m0", role: "assistant", content: "Hey - ask me anything about your learning progress." }];
       }
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed?.messages) && parsed.messages.length > 0) {
@@ -111,7 +111,7 @@ export default function ChatPage() {
     } catch {
       // Ignore malformed localStorage payloads and fall back to default.
     }
-    return [{ id: "m0", role: "assistant", content: "Hey — ask me anything about your learning progress." }];
+    return [{ id: "m0", role: "assistant", content: "Hey - ask me anything about your learning progress." }];
   });
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -242,14 +242,11 @@ export default function ChatPage() {
 
   return (
     <div className="h-full w-full flex">
-      {/* Main chat column */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
         <div className="h-14 px-6 flex items-center border-b border-gray-100 bg-white shrink-0">
           <div className="text-sm font-semibold text-gray-900">AI-tutor</div>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto bg-[#fafafa]">
           <div className="max-w-3xl mx-auto px-4 py-6 pb-28 space-y-6">
             {messages.map((m) => (
@@ -269,7 +266,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Composer */}
         <div className="border-t border-gray-100 bg-white shrink-0">
           <div className="max-w-3xl mx-auto px-4 py-4">
             <div className="rounded-2xl border border-gray-200 bg-white shadow-sm flex items-end gap-2 p-3">
@@ -284,24 +280,20 @@ export default function ChatPage() {
               <button
                 onClick={handleSend}
                 disabled={!canSend}
-                className={`h-9 px-4 rounded-xl text-sm font-semibold transition
-                  ${
-                    canSend
-                      ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                      : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  }`}
+                className={`h-9 px-4 rounded-xl text-sm font-semibold transition ${
+                  canSend
+                    ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                }`}
               >
                 Send
               </button>
             </div>
-            <div className="text-[12px] text-gray-400 mt-2 px-1">
-              Enter to send • Shift+Enter for new line
-            </div>
+            <div className="text-[12px] text-gray-400 mt-2 px-1">Enter to send • Shift+Enter for new line</div>
           </div>
         </div>
       </div>
 
-      {/* ✅ Keep your Studio sidebar */}
       <ChatStudio />
     </div>
   );
@@ -331,11 +323,7 @@ function MessageRow({ role, content }) {
                   const text = normalizeNodeText(Array.isArray(children) ? children : [children]);
                   const shouldUnderline =
                     text.includes("targeted actions:") || text.includes("resources to review:");
-                  return (
-                    <strong className={shouldUnderline ? "underline underline-offset-4" : undefined}>
-                      {children}
-                    </strong>
-                  );
+                  return <strong className={shouldUnderline ? "underline underline-offset-4" : undefined}>{children}</strong>;
                 },
               }}
             >
@@ -356,8 +344,9 @@ function Avatar({ role }) {
   const isUser = role === "user";
   return (
     <div
-      className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-      ${isUser ? "bg-gray-900 text-white" : "bg-gradient-to-br from-pink-500 to-orange-400 text-white"}`}
+      className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+        isUser ? "bg-gray-900 text-white" : "bg-gradient-to-br from-pink-500 to-orange-400 text-white"
+      }`}
       title={isUser ? "You" : "Coach"}
     >
       {isUser ? "You" : "AI"}
