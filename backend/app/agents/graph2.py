@@ -885,7 +885,8 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
             "WEAKNESS OUTPUT RULES: keep response concise (max 5 bullets), diagnose likely causes and give 2-3 targeted actions. "
             "When rag_context or rag_resources are present, add a short '**Resources to Review**' section with 2-4 items. "
             "Each item must include: resource source name, one misunderstanding summary tied to the user's wrong-attempt topic/question, and what to review next. "
-            "Format each resource line as a plain bullet '- **SourceName** — what to review next' (no numbering, no quotation marks around source names). "
+            "Format each resource line as a plain bullet '- **<real source name>** — what to review next' (no numbering, no quotation marks around source names). "
+            "Use the exact source names from rag_resources; never output the placeholder literal 'SourceName'. "
             "Do not output markdown separators like '---', '***', or horizontal rules. "
             "Do not provide full plan structures, minute allocations, or weekly schedules unless PLAN intent is present."
         ),
@@ -935,7 +936,8 @@ def _generate_branch_response(state: GraphState, branch: str) -> str:
         "If rag_context is provided, ground explanation and corrective actions in those lecturer-note snippets where relevant, and cite sources in plain text like (Source: filename.pdf). "
         "If rag_mistake_context is provided, directly connect each major weakness to those wrong-question snippets and their linked note excerpts. "
         "If rag_resources is provided, include a clear '**Resources to Review**' section and connect each resource to a misunderstanding from recent wrong attempts. "
-        "Format each resource as a plain bullet '- **SourceName** — what to review next' (no numbering, no quotation marks). "
+        "Format each resource as a plain bullet '- **<real source name>** — what to review next' (no numbering, no quotation marks). "
+        "Use the exact source names from rag_resources; never output the placeholder literal 'SourceName'. "
         "Use markdown bold for section headings where appropriate (for example: **Resources to Review**). "
         "Do not use labels like 'linked query'. Do not output markdown separators like '---', '***', or horizontal rules. "
         f"{branch_directive} "
@@ -3492,4 +3494,3 @@ if __name__ == "__main__":
             print(f"[DEBUG][ERROR] Graph run failed: {exc}")
 
     print("\n[DEBUG] graph2.py test harness finished")
-
