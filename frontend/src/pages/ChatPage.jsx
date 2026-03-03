@@ -1,12 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import ChatStudio from "../components/ChatStudio";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const ASSUMED_STUDENT_ID = "b980af0d-dc11-4044-b555-c2179b5a45b2";
 const CHAT_STORAGE_KEY = "gpa_chat_state_v1";
 const CHAT_ACTION_STORAGE_KEY = "gpa_chat_action_v1";
+const PLAN_MODE_STORAGE_KEY = "gpa_plan_mode_enabled_v1";
+const DEFAULT_WELCOME_MESSAGE = `Hey - ask me anything about your learning progress.
+
+Try prompts like:
+
+- "What topic am I weakest in right now?"
+- "Why am I making conceptual mistakes in Interaction Design?"
+- "Give me a focused 25-minute practice drill for User-Centred Design."
+- "Create a 7-day study plan for my top 2 weak topics."
+- "What resources should I review first, and why?"`;
+
+function normalizeWelcomeMessage(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  const first = messages[0];
+  if (
+    first &&
+    first.role === "assistant" &&
+    typeof first.content === "string" &&
+    first.content.toLowerCase().includes("ask me anything about your learning progress")
+  ) {
+    return [{ ...first, content: DEFAULT_WELCOME_MESSAGE }, ...messages.slice(1)];
+  }
+  return messages;
+}
 
 function normalizeFinalText(payload) {
   const primary = payload?.artifact?.response;
@@ -102,20 +125,27 @@ export default function ChatPage() {
     try {
       const saved = localStorage.getItem(CHAT_STORAGE_KEY);
       if (!saved) {
-        return [{ id: "m0", role: "assistant", content: "Hey - ask me anything about your learning progress." }];
+        return [{ id: "m0", role: "assistant", content: DEFAULT_WELCOME_MESSAGE }];
       }
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed?.messages) && parsed.messages.length > 0) {
-        return parsed.messages;
+        return normalizeWelcomeMessage(parsed.messages);
       }
     } catch {
       // Ignore malformed localStorage payloads and fall back to default.
     }
-    return [{ id: "m0", role: "assistant", content: "Hey - ask me anything about your learning progress." }];
+    return [{ id: "m0", role: "assistant", content: DEFAULT_WELCOME_MESSAGE }];
   });
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [nextSendConstraints, setNextSendConstraints] = useState({});
+  const [planModeEnabled, setPlanModeEnabled] = useState(() => {
+    try {
+      return localStorage.getItem(PLAN_MODE_STORAGE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [pendingRunId, setPendingRunId] = useState(() => {
     try {
       const saved = localStorage.getItem(CHAT_STORAGE_KEY);
@@ -172,6 +202,14 @@ export default function ChatPage() {
     }
   }, [messages, pendingRunId, pendingQuestion]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(PLAN_MODE_STORAGE_KEY, planModeEnabled ? "1" : "0");
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [planModeEnabled]);
+
   const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
 
   async function handleSend() {
@@ -197,7 +235,10 @@ export default function ChatPage() {
             student_id: ASSUMED_STUDENT_ID,
             message: text,
             window_days: 180,
-            constraints: nextSendConstraints,
+            constraints: {
+              plan_mode: planModeEnabled,
+              ...nextSendConstraints,
+            },
           };
 
       const data = await postJson(endpoint, payload);
@@ -243,8 +284,24 @@ export default function ChatPage() {
   return (
     <div className="h-full w-full flex">
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="h-14 px-6 flex items-center border-b border-gray-100 bg-white shrink-0">
+        <div className="h-14 px-6 flex items-center justify-between border-b border-gray-100 bg-white shrink-0">
           <div className="text-sm font-semibold text-gray-900">AI-tutor</div>
+          <button
+            type="button"
+            onClick={() => setPlanModeEnabled((prev) => !prev)}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold border transition ${
+              planModeEnabled
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                planModeEnabled ? "bg-white" : "bg-gray-400"
+              }`}
+            />
+            Plan Mode {planModeEnabled ? "On" : "Off"}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-[#fafafa]">
@@ -294,7 +351,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <ChatStudio />
     </div>
   );
 }
